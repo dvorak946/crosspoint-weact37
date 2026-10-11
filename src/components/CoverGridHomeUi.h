@@ -22,6 +22,7 @@ class CoverGridHomeUi final : public UiAppHost {
   void begin(const std::vector<RecentBook>& books, bool hasOpds, bool hasContinueReading);
   void refreshCoverPaths();
   void setSelection(int selection) { selected = selection; }
+  bool usesSequentialNavigation() const { return compactScreen(); }
   int selectedAction(const MappedInputManager& input);
   // Exact generation height, shared by every slot and recorded during draw.
   // Thumbs must be generated at the drawn size: rescaling a dithered 1-bit
@@ -33,6 +34,8 @@ class CoverGridHomeUi final : public UiAppHost {
   static void screenFn(UiScreen& screen, void* user);
   static void onAction(const freeink::ui::ActionEvent& event, void* user);
   void draw(UiScreen& screen);
+  bool compactScreen() const;
+  void drawCompact(UiScreen& screen);
   void drawHeaderBand();
   void drawEmpty(UiScreen& screen);
   void drawCurrent(UiScreen& screen, freeink::ui::Rect rect, int coverRowHeight);

@@ -137,8 +137,13 @@ void IntervalSelectionActivity::loop() {
   // On edge-button boards (X3, X4 Pro) the side buttons sit on the left/right edges of the screen rather
   // than as a vertical up/down rocker (X4), so BTN_UP is physically the left button and BTN_DOWN the right
   // one. Flip the large-step direction there so the left button decreases and the right button increases.
-  const int upDelta = gpio.hasEdgeSideButtons() ? -largeStep : largeStep;
-  const int downDelta = gpio.hasEdgeSideButtons() ? largeStep : -largeStep;
+  int upDelta = gpio.hasEdgeSideButtons() ? -largeStep : largeStep;
+#if defined(FREEINK_WEACT37_DRIVER) && FREEINK_WEACT37_DRIVER
+  // The WeAct sleep picker uses the navigation order shown by its -/+ hints:
+  // previous (Up) decreases, next (Down) increases. Scope to this picker only.
+  if (titleId == StrId::STR_TIME_TO_SLEEP) upDelta = -largeStep;
+#endif
+  const int downDelta = -upDelta;
   buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Up}, [this, upDelta] { adjustValue(upDelta); });
   buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Down},
                                        [this, downDelta] { adjustValue(downDelta); });

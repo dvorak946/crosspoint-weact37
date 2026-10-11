@@ -27,10 +27,10 @@ import subprocess
 PATCHES = (
     ("0001-invalidate-failed-cache-fill.patch", "src/common/FsCache.cpp",
      "ba4f99dd660c7c6a747b20abcf11354379aa689115d1ee1ad1cf9577706a67bb",
-     "f46a551f97c674ab00c9c25385af7c370a776725f17e14502fcc357858f583da"),
+     "2211432d259ae35d9e1a32138512c21b50fd69d175ce9ec63679a54d2c3aa498"),
     ("0002-allow-separate-fat-cache-override.patch", "src/SdFatConfig.h",
      "7889975cad262158e1623c873730210c41c55c2198830d668952b82e588ff7cc",
-     "32104db82acc857b70c7fe20740afbffa9f7dee0a7c685c106febfa989fdbe77"),
+     "18d0ae66e8cd864752e9794b7a9753ab6ec8dc51ca5745574e7dd83d37cc1bc4"),
 )
 
 
@@ -73,7 +73,7 @@ def apply_patches(project_dir, dependency_dir):
             raise RuntimeError("Unrecognized SdFat source: " + relative)
         patch = project / "scripts" / "sdfat_patches" / name
         # Validate the entire set before changing any dependency files.
-        command = ["git", "apply", "--check"]
+        command = ["git", "apply", "--check", "--ignore-whitespace", "--recount"]
         if current == patched:
             command.append("--reverse")
         result = subprocess.run(command + [str(patch)], cwd=dependency,
@@ -83,7 +83,7 @@ def apply_patches(project_dir, dependency_dir):
         if current == upstream:
             pending.append((patch, target, patched))
     for patch, target, expected in pending:
-        subprocess.run(["git", "apply", str(patch)], cwd=dependency, env=process_env, check=True)
+        subprocess.run(["git", "apply", "--ignore-whitespace", "--recount", str(patch)], cwd=dependency, env=process_env, check=True)
         if digest(target) != expected:
             raise RuntimeError("Unexpected patched SdFat source: " + target.name)
         print("Applied SdFat patch: " + patch.name)

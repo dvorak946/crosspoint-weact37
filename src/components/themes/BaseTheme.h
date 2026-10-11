@@ -68,7 +68,7 @@ struct ThemeMetrics {
 
   int tabSpacing;
   int tabBarHeight;
-  int coverGridTabBarHeight = 72;
+  int coverGridTabBarHeight = 36;
   // Selected-tab pill fills its equal-width slot (legacy RoundedRaff tabs)
   // instead of shrinking to hug the label (legacy Lyra tabs).
   bool tabPillFullSlot = false;
@@ -152,59 +152,61 @@ enum UIIcon {
 // Default theme implementation (Classic Theme)
 // Additional themes can inherit from this and override methods as needed
 
+// Compact Classic layout for the WeAct 3.7-inch portrait panel (240 x 416).
+// ThemeMetrics field order and the drawing API stay compatible with derived themes.
 namespace BaseMetrics {
 constexpr ThemeMetrics values = {.batteryWidth = 15,
                                  .batteryHeight = 12,
                                  .topPadding = 5,
-                                 .batteryBarHeight = 20,
-                                 .headerHeight = 84,
-                                 .verticalSpacing = 10,
-                                 .previewPadding = 12,
+                                 .batteryBarHeight = 32,
+                                 .headerHeight = 64,
+                                 .verticalSpacing = 6,
+                                 .previewPadding = 8,
                                  .previewHeightPercent = 30,
-                                 .contentSidePadding = 20,
-                                 .listRowHeight = 30,
-                                 .listWithSubtitleRowHeight = 50,
+                                 .contentSidePadding = 10,
+                                 .listRowHeight = 28,
+                                 .listWithSubtitleRowHeight = 44,
                                  .listRowGap = 0,
                                  .listRowRadius = 0,
                                  .listInset = 0,
-                                 .listSidePadding = 20,
+                                 .listSidePadding = 10,
                                  .listSelectionStyle = 0,  // invert fill
                                  .listScrollWidth = 4,
                                  .listScrollSide = 0,
                                  .listTitleBold = false,
-                                 .headerSidePadding = 18,
+                                 .headerSidePadding = 10,
                                  .headerUnderlineSize = 0,
                                  .headerTitleAlign = 1,  // centered
                                  .headerBatterySide = 0,
                                  // Corner clock: a centered clock would collide with the centered title.
                                  .headerClockCentered = false,
-                                 .menuRowHeight = 45,
-                                 .menuSpacing = 8,
-                                 .tabSpacing = 10,
-                                 .tabBarHeight = 50,
+                                 .menuRowHeight = 28,
+                                 .menuSpacing = 6,
+                                 .tabSpacing = 6,
+                                 .tabBarHeight = 32,
                                  .scrollBarWidth = 4,
                                  .scrollBarRightOffset = 5,
-                                 .homeTopPadding = 40,
-                                 .homeCoverHeight = 400,
-                                 .homeCoverTileHeight = 400,
+                                 .homeTopPadding = 32,
+                                 .homeCoverHeight = 128,
+                                 .homeCoverTileHeight = 128,
                                  .homeRecentBooksCount = 1,
                                  .homeContinueReadingInMenu = false,
-                                 .homeMenuTopOffset = 10,
-                                 .buttonHintsHeight = 40,
-                                 .sideButtonHintsWidth = 30,
-                                 .progressBarHeight = 16,
+                                 .homeMenuTopOffset = 8,
+                                 .buttonHintsHeight = 32,
+                                 .sideButtonHintsWidth = 20,
+                                 .progressBarHeight = 8,
                                  .progressBarMarginTop = 1,
                                  .statusBarHorizontalMargin = 5,
                                  .statusBarVerticalMargin = 19,
-                                 .keyboardKeyHeight = 56,
+                                 .keyboardKeyHeight = 32,
                                  .keyboardKeySpacing = 0,
                                  .keyboardCenteredText = false,
-                                 .keyboardVerticalOffset = -13,
+                                 .keyboardVerticalOffset = -6,
                                  .keyboardTextFieldWidthPercent = 85,
                                  .keyboardWidthPercent = 94,
                                  .popupTopOffsetRatio = 0.075f,
-                                 .popupMarginX = 15,
-                                 .popupMarginY = 15,
+                                 .popupMarginX = 10,
+                                 .popupMarginY = 10,
                                  .popupFrameThickness = 2,
                                  .popupCornerRadius = 0,
                                  .popupTextBold = true,
@@ -216,9 +218,9 @@ constexpr ThemeMetrics values = {.batteryWidth = 15,
                                  .popupProgressFillInverted = true,
                                  .popupProgressOutlineInverted = true,
                                  .optionPopupItemSpacing = 6,
-                                 .optionPopupInnerPadding = 16,
+                                 .optionPopupInnerPadding = 8,
                                  .optionPopupSelectionVPadding = 4,
-                                 .optionPopupDialogSideMargin = 20,
+                                 .optionPopupDialogSideMargin = 10,
                                  .textFieldHorizontalPadding = 6,
                                  .textFieldNormalThickness = 1,
                                  .textFieldCursorThickness = 3,
@@ -241,8 +243,9 @@ class BaseTheme {
   static bool drawCoverThumbFill(const GfxRenderer& renderer, const Bitmap& bitmap, Rect slot, int xOffset = 0);
   static void drawProgressBar(const GfxRenderer& renderer, Rect rect, size_t current, size_t total);
   void drawBatteryLeft(const GfxRenderer& renderer, Rect rect,
-                       bool showPercentage = true) const;  // Left aligned (reader mode)
+                       bool showPercentage = true, int fontId = 0) const;  // Left aligned (reader mode)
   virtual void fillBatteryIcon(const GfxRenderer& renderer, Rect rect, uint16_t percentage) const;
+  // Front hints use fixed slots; absent front Left/Right are hidden on our WeAct profile.
   virtual void drawButtonHints(GfxRenderer& renderer, const char* btn1, const char* btn2, const char* btn3,
                                const char* btn4) const;
   // Shared by every theme's drawButtonHints(): centres a hint label in its box,
@@ -280,6 +283,9 @@ class BaseTheme {
                               const std::function<UIIcon(int index)>& rowIcon) const;
   virtual Rect drawPopup(const GfxRenderer& renderer, const char* message) const;
   virtual void fillPopupProgress(const GfxRenderer& renderer, const Rect& layout, const int progress) const;
+  // Minimum text-lane reservation for the fixed fonts in statusBarSpec().
+  // Includes descenders and the gap to the progress bar, without reader fonts.
+  static int getStatusBarTextLaneHeight();
   static void drawStatusBar(GfxRenderer& renderer, const float bookProgress, const int currentPage, const int pageCount,
                             std::string title, const int paddingBottom = 0, const int textYOffset = 0,
                             const bool fillMargin = true, const bool isPageBookmarked = false,

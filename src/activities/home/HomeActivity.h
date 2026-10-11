@@ -19,8 +19,8 @@ class HomeActivity final : public Activity {
   bool firstRenderDone = false;
   bool hasOpdsServers = false;
   bool hasPlugins = false;
-  // The home "library" slot (index 2) shows Plugins when any plugin is
-  // installed, otherwise OPDS. The index converters gate on its presence.
+  // The optional slot shows Plugins when installed, otherwise OPDS.
+  // RoundedRaff places it last; other themes keep their existing third slot.
   bool hasLibrarySlot() const { return hasPlugins || hasOpdsServers; }
   bool hasContinueReading = false;
   bool coverRendered = false;      // Track if cover has been rendered once
@@ -39,7 +39,17 @@ class HomeActivity final : public Activity {
   const bool cleanInitialRefresh;
 
   // Convert HomeMenuItem to menu index (used in onEnter)
-  static int menuItemToIndex(HomeMenuItem item, bool hasOpdsUrl) {
+  static int menuItemToIndex(HomeMenuItem item, bool hasOpdsUrl, bool optionalSlotAtEnd = false) {
+    if (optionalSlotAtEnd) {
+      switch (item) {
+        case HomeMenuItem::FILE_BROWSER: return 0;
+        case HomeMenuItem::LIBRARY: return 1;
+        case HomeMenuItem::FILE_TRANSFER: return 2;
+        case HomeMenuItem::SETTINGS_MENU: return 3;
+        case HomeMenuItem::OPDS_BROWSER: return hasOpdsUrl ? 4 : 0;
+        default: return 0;
+      }
+    }
     int i = 0;
     if (item == HomeMenuItem::FILE_BROWSER) return i;
     ++i;
@@ -54,7 +64,17 @@ class HomeActivity final : public Activity {
   }
 
   // Convert menu index to HomeMenuItem (used in loop)
-  static HomeMenuItem indexToMenuItem(int idx, bool hasOpdsUrl) {
+  static HomeMenuItem indexToMenuItem(int idx, bool hasOpdsUrl, bool optionalSlotAtEnd = false) {
+    if (optionalSlotAtEnd) {
+      switch (idx) {
+        case 0: return HomeMenuItem::FILE_BROWSER;
+        case 1: return HomeMenuItem::LIBRARY;
+        case 2: return HomeMenuItem::FILE_TRANSFER;
+        case 3: return HomeMenuItem::SETTINGS_MENU;
+        case 4: return hasOpdsUrl ? HomeMenuItem::OPDS_BROWSER : HomeMenuItem::NONE;
+        default: return HomeMenuItem::NONE;
+      }
+    }
     int i = 0;
     if (idx == i++) return HomeMenuItem::FILE_BROWSER;
     if (idx == i++) return HomeMenuItem::LIBRARY;

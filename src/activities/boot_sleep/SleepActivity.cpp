@@ -885,11 +885,18 @@ void SleepActivity::renderLastScreenSleepScreen() const {
   // Only the moon differs from the displayed frame, so a differential FAST
   // update adds it without the flashing clean pass (which sweeps the panel
   // through the inverse — a full white flash on a night-mode page).
+#if defined(FREEINK_WEACT37_DRIVER) && FREEINK_WEACT37_DRIVER
+  // With periodic cleanup disabled, Quick Resume is also a cleanup point.
+  // displayBuffer blocks until the normal full waveform has completed.
+  LOG_INF("SLP", "WeAct Quick Resume: full cleanup before sleep");
+  renderer.displayBuffer(HalDisplay::FULL_REFRESH);
+#else
   if (gpio.deviceIsX3()) {
     renderer.displayGrayscaleBase(HalDisplay::FAST_REFRESH);
   } else {
     renderer.displayBuffer(HalDisplay::FAST_REFRESH);
   }
+#endif
 }
 
 void SleepActivity::renderBlankSleepScreen() const {

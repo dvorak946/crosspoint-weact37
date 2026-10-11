@@ -12,6 +12,7 @@
 #include <cstring>
 
 #include "BitmapHelpers.h"
+#include "CoverSizing.h"
 
 // ============================================================================
 // IMAGE PROCESSING OPTIONS - Same as JpegToBmpConverter for consistency
@@ -575,8 +576,10 @@ bool PngToBmpConverter::pngFileToBmpStreamInternal(HalFile& pngFile, Print& bmpO
   uint32_t scaleY_fp = 65536;
   bool needsScaling = false;
 
-  if (targetWidth > 0 && targetHeight > 0 &&
-      (static_cast<int>(width) != targetWidth || static_cast<int>(height) != targetHeight)) {
+  if (targetWidth > 0 && targetHeight == 0) {
+    if (!CoverSizing::byWidth(width, height, targetWidth, outWidth, outHeight)) return false;
+  } else if (targetWidth > 0 && targetHeight > 0 &&
+             (static_cast<int>(width) != targetWidth || static_cast<int>(height) != targetHeight)) {
     const float scaleToFitWidth = static_cast<float>(targetWidth) / width;
     const float scaleToFitHeight = static_cast<float>(targetHeight) / height;
     float scale = 1.0;
@@ -591,12 +594,14 @@ bool PngToBmpConverter::pngFileToBmpStreamInternal(HalFile& pngFile, Print& bmpO
     if (outWidth < 1) outWidth = 1;
     if (outHeight < 1) outHeight = 1;
 
+    LOG_DBG("PNG", "Scaling %ux%u -> %dx%d (target %dx%d)", width, height, outWidth, outHeight, targetWidth,
+            targetHeight);
+  }
+
+  if (static_cast<int>(width) != outWidth || static_cast<int>(height) != outHeight) {
     scaleX_fp = (width << 16) / outWidth;
     scaleY_fp = (height << 16) / outHeight;
     needsScaling = true;
-
-    LOG_DBG("PNG", "Scaling %ux%u -> %dx%d (target %dx%d)", width, height, outWidth, outHeight, targetWidth,
-            targetHeight);
   }
 
   // Write BMP header
@@ -832,4 +837,9 @@ bool PngToBmpConverter::pngFileToBmpStreamWithSize(HalFile& pngFile, Print& bmpO
 bool PngToBmpConverter::pngFileTo1BitBmpStreamWithSize(HalFile& pngFile, Print& bmpOut, int targetMaxWidth,
                                                        int targetMaxHeight) {
   return pngFileToBmpStreamInternal(pngFile, bmpOut, targetMaxWidth, targetMaxHeight, true, true);
+}
+
+bool PngToBmpConverter::pngFileTo1BitBmpStreamWithWidth(HalFile& source, Print& output, int width) {
+  if (width <= 0) return false;
+  return pngFileToBmpStreamInternal(source, output, width, 0, true, false);
 }

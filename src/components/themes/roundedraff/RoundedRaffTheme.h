@@ -5,69 +5,66 @@
 class GfxRenderer;
 
 namespace RoundedRaffMetrics {
-constexpr ThemeMetrics values = {.batteryWidth = 15,
-                                 .batteryHeight = 12,
-                                 // Fit the 23px SMALL_FONT_ID line box and lift it one pixel while
-                                 // keeping the 12px battery glyph at y=19, aligned with Lyra.
-                                 .topPadding = 13,
-                                 .batteryBarHeight = 24,
-                                 .headerHeight = 84,
-                                 .verticalSpacing = 10,
-                                 .previewPadding = 12,
+constexpr ThemeMetrics values = {.batteryWidth = 12,
+                                 .batteryHeight = 8,
+                                 // Compact portrait layout for the WeAct 3.7-inch panel (240 x 416).
+                                 .topPadding = 0,
+                                 .batteryBarHeight = 15,
+                                 .headerHeight = 64,
+                                 .verticalSpacing = 6,
+                                 .previewPadding = 8,
                                  .previewHeightPercent = 30,
-                                 .contentSidePadding = 20,
-                                 .listRowHeight = 42,
-                                 .listWithSubtitleRowHeight = 69,
-                                 .listRowGap = 6,
-                                 .listRowRadius = 20,
-                                 .listInset = 20,
-                                 .listSidePadding = 20,
+                                 .contentSidePadding = 10,
+                                 .listRowHeight = 28,
+                                 .listWithSubtitleRowHeight = 44,
+                                 .listRowGap = 4,
+                                 .listRowRadius = 12,
+                                 .listInset = 10,
+                                 .listSidePadding = 10,
                                  .listSelectionStyle = 0,  // invert fill (black card)
                                  .listScrollWidth = 4,
                                  .listScrollSide = 0,
                                  .listTitleBold = true,
-                                 .headerSidePadding = 18,
+                                 .headerSidePadding = 10,
                                  .headerUnderlineSize = 0,
                                  .headerTitleAlign = 0,  // left
                                  .headerBatterySide = 0,
                                  // A centered clock needs no left title reserve, so RoundedRaff
                                  // can show one after all.
                                  .headerShowsClock = true,
-                                 .menuRowHeight = 42,  // not authoritative: getMenuRowHeight() derives the drawn height
-                                 .menuSpacing = 6,
-                                 .tabSpacing = 10,
-                                 .tabBarHeight = 50,
+                                 .menuRowHeight = 25,  // one horizontal Home tab band
+                                 .menuSpacing = 0,
+                                 .tabSpacing = 6,
+                                 .tabBarHeight = 32,
+                                 .coverGridTabBarHeight = 32,
                                  .tabPillFullSlot = true,
                                  .scrollBarWidth = 4,
                                  .scrollBarRightOffset = 5,
-                                 // Tall enough that the home band's centered book title clears the
-                                 // battery strip above and keeps padding below.
-                                 .homeTopPadding = 64,
-                                 // Smaller cover tile so the home menu sits higher (fits 5 items
-                                 // without overlap); shrunk by the homeTopPadding growth above so
-                                 // the menu keeps its position.
-                                 .homeCoverHeight = 300,
-                                 .homeCoverTileHeight = 341,
+                                 // Keep covers below the status strip; the actual cover/title height is
+                                 // shared by the fixed square art and the metadata reservation.
+                                 .homeTopPadding = 18,
+                                 .homeCoverHeight = 220,
+                                 .homeCoverTileHeight = 306,  // 220px cover + 2px gap + 84px metadata
                                  .homeRecentBooksCount = 1,
-                                 .homeContinueReadingInMenu = true,
-                                 .homeMenuTopOffset = 20,
-                                 .buttonHintsHeight = 40,
-                                 .sideButtonHintsWidth = 30,
-                                 .progressBarHeight = 16,
+                                 .homeContinueReadingInMenu = false,
+                                 .homeMenuTopOffset = 2,
+                                 .buttonHintsHeight = 32,
+                                 .sideButtonHintsWidth = 20,
+                                 .progressBarHeight = 8,
                                  .progressBarMarginTop = 1,
                                  .statusBarHorizontalMargin = 5,
                                  .statusBarVerticalMargin = 19,
-                                 .keyboardKeyHeight = 56,
-                                 .keyboardKeySpacing = 10,
+                                 .keyboardKeyHeight = 32,
+                                 .keyboardKeySpacing = 0,
                                  .keyboardCenteredText = false,
-                                 .keyboardVerticalOffset = 0,
+                                 .keyboardVerticalOffset = -6,
                                  .keyboardTextFieldWidthPercent = 85,
                                  .keyboardWidthPercent = 94,
-                                 .popupTopOffsetRatio = 0.12f,
-                                 .popupMarginX = 20,
-                                 .popupMarginY = 14,
+                                 .popupTopOffsetRatio = 0.075f,
+                                 .popupMarginX = 10,
+                                 .popupMarginY = 10,
                                  .popupFrameThickness = 2,
-                                 .popupCornerRadius = 18,
+                                 .popupCornerRadius = 12,
                                  .popupTextBold = true,
                                  .popupTextInverted = false,
                                  .popupTextBaselineOffsetY = -2,
@@ -77,15 +74,15 @@ constexpr ThemeMetrics values = {.batteryWidth = 15,
                                  .popupProgressFillInverted = false,
                                  .popupProgressOutlineInverted = false,
                                  .optionPopupItemSpacing = 6,
-                                 .optionPopupInnerPadding = 24,
-                                 .optionPopupSelectionVPadding = 10,
-                                 .optionPopupDialogSideMargin = 20,
+                                 .optionPopupInnerPadding = 8,
+                                 .optionPopupSelectionVPadding = 4,
+                                 .optionPopupDialogSideMargin = 10,
                                  .textFieldHorizontalPadding = 8,
                                  .textFieldNormalThickness = 2,
                                  .textFieldCursorThickness = 3,
                                  .textFieldLineEndOffset = -1,
-                                 .controlRadius = 18,
-                                 .sheetRadius = 18,
+                                 .controlRadius = 12,
+                                 .sheetRadius = 12,
                                  .capsuleRadius = 255};
 }
 
@@ -104,5 +101,18 @@ class RoundedRaffTheme : public BaseTheme {
                      int contentStartX = 0, int contentWidth = 0) const override;
   void drawButtonHints(GfxRenderer& renderer, const char* btn1, const char* btn2, const char* btn3,
                        const char* btn4) const override;
-  bool homeMenuShowsContinueReading() const { return true; }
+  bool homeMenuShowsContinueReading() const { return false; }
+
+
+ private:
+  // Home calls cover then menu in the same render. Defer the cover until the
+  // menu band is known. Its height stays fixed with or without plugins.
+  mutable std::function<void(int)> pendingHomeCover_;
+  mutable int cachedCoverWidth_ = 0;
+  mutable int cachedCoverHeight_ = 0;
+  mutable int homeBookProgress_ = -1;
+  mutable std::string progressBookPath_;
+  void drawHomeCover(GfxRenderer& renderer, Rect rect, const std::vector<RecentBook>& recentBooks,
+                     int selectorIndex, bool& coverRendered, bool& coverBufferStored, bool bufferRestored,
+                     const std::function<bool()>& storeCoverBuffer) const;
 };

@@ -25,6 +25,7 @@ enum MenuItem {
   ITEM_PROGRESS_BAR_THICKNESS,
   ITEM_TITLE,
   ITEM_BATTERY,
+  ITEM_FONT_SIZE,  // Font size for the reader status bar only.
   ITEM_XTC_STATUS_BAR,
   ITEM_CLOCK,  // RTC boards only
   ITEM_COUNT
@@ -42,6 +43,7 @@ const StrId menuNames[FULL_MENU_ITEMS] = {
     StrId::STR_PROGRESS_BAR_THICKNESS,
     StrId::STR_TITLE,
     StrId::STR_BATTERY,
+    StrId::STR_FONT_SIZE,
     StrId::STR_XTC_STATUS_BAR,
     StrId::STR_CLOCK,
 };
@@ -61,6 +63,9 @@ const StrId xtcStatusBarNames[XTC_STATUS_BAR_ITEMS] = {StrId::STR_HIDE, StrId::S
 
 constexpr int STATUS_BAR_CLOCK_ITEMS = CrossPointSettings::STATUS_BAR_CLOCK_MODE_COUNT;
 const StrId statusBarClockNames[STATUS_BAR_CLOCK_ITEMS] = {StrId::STR_HIDE, StrId::STR_DIR_RIGHT, StrId::STR_DIR_LEFT};
+
+constexpr int STATUS_BAR_FONT_ITEMS = CrossPointSettings::STATUS_BAR_FONT_SIZE_COUNT;
+const char* const statusBarFontNames[STATUS_BAR_FONT_ITEMS] = {"Default (8 pt)", "7 pt", "6 pt"};
 
 const int verticalPreviewTextPadding = 40;
 }  // namespace
@@ -92,6 +97,10 @@ void StatusBarSettingsActivity::onEnter() {
 
   if (SETTINGS.statusBarClock >= STATUS_BAR_CLOCK_ITEMS) {
     SETTINGS.statusBarClock = CrossPointSettings::STATUS_BAR_CLOCK_MODE::STATUS_BAR_CLOCK_HIDE;
+  }
+
+  if (SETTINGS.statusBarFontSize >= STATUS_BAR_FONT_ITEMS) {
+    SETTINGS.statusBarFontSize = CrossPointSettings::STATUS_BAR_FONT_DEFAULT;
   }
 
   // Labels never change (unlike the values, which track live SETTINGS
@@ -147,6 +156,14 @@ void StatusBarSettingsActivity::handleSelection() {
     case ITEM_BATTERY:
       SETTINGS.statusBarBattery = (SETTINGS.statusBarBattery + 1) % 2;
       break;
+    case ITEM_FONT_SIZE:
+      optionPopup.show(I18N.get(StrId::STR_FONT_SIZE), statusBarFontNames, STATUS_BAR_FONT_ITEMS,
+                       SETTINGS.statusBarFontSize, [this](int idx) {
+                         if (idx < 0 || idx >= STATUS_BAR_FONT_ITEMS) return;
+                         SETTINGS.statusBarFontSize = static_cast<uint8_t>(idx);
+                         SETTINGS.saveToFile();
+                       });
+      return;
     case ITEM_XTC_STATUS_BAR:
       optionPopup.show(StrId::STR_XTC_STATUS_BAR, xtcStatusBarNames, XTC_STATUS_BAR_ITEMS, SETTINGS.xtcStatusBarMode,
                        [this](int idx) {
@@ -171,6 +188,8 @@ std::string StatusBarSettingsActivity::rowValueText(const int index) {
       return I18N.get(progressBarThicknessNames[SETTINGS.statusBarProgressBarThickness]);
     case ITEM_TITLE:
       return I18N.get(titleNames[SETTINGS.statusBarTitle]);
+    case ITEM_FONT_SIZE:
+      return statusBarFontNames[SETTINGS.statusBarFontSize];
     case ITEM_XTC_STATUS_BAR:
       return I18N.get(xtcStatusBarNames[SETTINGS.xtcStatusBarMode]);
     case ITEM_CLOCK:

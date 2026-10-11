@@ -76,7 +76,7 @@ void EpubReaderChapterSelectionActivity::refreshTocWindow(const int start) {
     int count;
   } prewarmCtx{windowLabels, windowCount};
   renderer.prewarmFallbackText(
-      uiScaleSpec().bodyFontId,
+      uiScaleSpec().smallFontId,
       [](const void* ctx, uint32_t i) -> const char* {
         const auto* c = static_cast<const PrewarmCtx*>(ctx);
         return i < static_cast<uint32_t>(c->count) ? c->labels[i].c_str() : nullptr;
@@ -147,6 +147,10 @@ void EpubReaderChapterSelectionActivity::buildScreen(UiScreen& screen) {
   props.count = static_cast<uint16_t>(listCount());
   props.action = ACTION_ROW;
   props.inputMask = fui::InputTouch;  // physical buttons stay in loop()
+  // Match Settings row typography and theme padding, with a third line for
+  // longer chapter names. Set the style before viewport measurement.
+  props.labelText = screen.theme().smallText;
+  props.labelText.maxLines = 3;
   syncListViewport(screen, props);
   // Materialize the row window for the final viewport (syncListViewport just
   // applied follow/clamping to nav.top) and hand list() the window with its

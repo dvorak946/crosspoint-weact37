@@ -182,6 +182,15 @@ inline SettingInfo buildDictionarySetting(const std::vector<DictionaryEntry>& di
   return s;
 }
 
+// Keep StrId slots for persisted-index validation; runtime labels show point sizes.
+inline SettingInfo buildStatusBarFontSizeSetting() {
+  auto s = SettingInfo::Enum(StrId::STR_FONT_SIZE, &CrossPointSettings::statusBarFontSize,
+                             {StrId::STR_NONE_OPT, StrId::STR_NONE_OPT, StrId::STR_NONE_OPT},
+                             "statusBarFontSize", StrId::STR_CUSTOMISE_STATUS_BAR);
+  s.enumStringValues = {"Default (8 pt)", "7 pt", "6 pt"};
+  return s;
+}
+
 inline std::vector<StrId> buildLongPressMenuValues() {
   static constexpr StrId VALUES[] = {StrId::STR_KOSYNC, StrId::STR_DISABLED, StrId::STR_BOOKMARK_OPTION,
                                      StrId::STR_DICTIONARY, StrId::STR_READER_MENU};
@@ -473,7 +482,8 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
               KOREADER_STORE.saveToFile();
             },
             "koSyncBehavior", StrId::STR_KOREADER_SYNC),
-        // --- Status Bar Settings (web-only, uses StatusBarSettingsActivity) ---
+        // --- Status Bar Settings (device UI uses StatusBarSettingsActivity) ---
+        buildStatusBarFontSizeSetting(),
         SettingInfo::Toggle(StrId::STR_CHAPTER_PAGE_COUNT, &CrossPointSettings::statusBarChapterPageCount,
                             "statusBarChapterPageCount", StrId::STR_CUSTOMISE_STATUS_BAR),
         SettingInfo::Toggle(StrId::STR_BOOK_PROGRESS_PERCENTAGE, &CrossPointSettings::statusBarBookProgressPercentage,

@@ -33,3 +33,11 @@ lib/EpdFont/scripts/output/
 sdkconfig.sticky
 sdkconfig.x4pro
 flake.*
+
+# Local build output and patch backups
+/.pio/
+/.cache/
+/backups/
+/patch-backups/
+/dictionary-settings-backup/
+*.bak

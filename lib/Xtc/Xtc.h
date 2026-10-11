@@ -66,7 +66,9 @@ class Xtc {
   // Thumbnail support (for Continue Reading card)
   std::string getThumbBmpPath() const;
   std::string getThumbBmpPath(int height) const;
-  bool generateThumbBmp(int height) const;
+  bool generateThumbBmp(int height, int width = 0) const;
+  std::string getHomeCoverBmpPath() const { return cachePath + "/home_cover_1bit_v4.bmp"; }
+  bool generateHomeCoverBmp(int width) const { return width > 0 && generateThumbBmp(0, width); }
 
   // Page access
   uint32_t getPageCount() const;

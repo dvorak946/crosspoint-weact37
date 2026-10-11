@@ -519,14 +519,10 @@ void WifiSelectionActivity::checkConnectionStatus() {
             WiFi.RSSI());
 #endif
 
-    // Sync RTC from NTP on the first successful WiFi connection only. The DS3231
-    // drifts ~2 ppm so one sync is enough; users can force a re-sync from
-    // Settings > System > Clock > Sync clock now.
-    if (halClock.isAvailable() && !SETTINGS.clockHasBeenSynced) {
-      if (halClock.syncFromNTP()) {
-        SETTINGS.clockHasBeenSynced = 1;
-        SETTINGS.saveToFile();
-      }
+    // CLOCK_WIFI: start asynchronously; the main loop polls and records success.
+    // A cold boot without an RTC needs fresh time even when the saved flag is set.
+    if (halClock.isAvailable() && (!halClock.hasValidTime() || !SETTINGS.clockHasBeenSynced)) {
+      halClock.startNtpSync();
     }
 
     // Every station join is a chance to snap the loan-clock floor to real

@@ -2,9 +2,7 @@
 
 #include "activities/Activity.h"
 
-// Manual NTP resync action. Runs a forced sync (bypassing the once-per-device debounce),
-// reports success/failure, then waits for Back. If WiFi is not connected yet, it reuses the
-// normal WiFi selection flow first.
+// Manual, non-blocking NTP synchronization with optional Wi-Fi selection.
 class ClockSyncActivity final : public Activity {
  public:
   explicit ClockSyncActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
@@ -13,7 +11,7 @@ class ClockSyncActivity final : public Activity {
   void onEnter() override;
   void onExit() override;
   void loop() override;
-  bool skipLoopDelay() override { return true; }
+  bool preventAutoSleep() override { return true; }
   void render(RenderLock&&) override;
 
  private:
@@ -21,6 +19,7 @@ class ClockSyncActivity final : public Activity {
   State state = SYNCING;
   char syncedTime[16] = {0};
   bool shouldTearDownWifiOnExit = false;
+  bool syncStarted = false;
 
   void runSync();
   void launchWifiSelection();

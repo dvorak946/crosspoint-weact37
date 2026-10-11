@@ -12,4 +12,6 @@ class PngToBmpConverter {
   static bool pngFileToBmpStream(HalFile& pngFile, Print& bmpOut, bool crop = true, bool originalThresholds = false);
   static bool pngFileToBmpStreamWithSize(HalFile& pngFile, Print& bmpOut, int targetMaxWidth, int targetMaxHeight);
   static bool pngFileTo1BitBmpStreamWithSize(HalFile& pngFile, Print& bmpOut, int targetMaxWidth, int targetMaxHeight);
+  // Resize to this width, preserving the original aspect ratio.
+  static bool pngFileTo1BitBmpStreamWithWidth(HalFile& source, Print& output, int width);
 };

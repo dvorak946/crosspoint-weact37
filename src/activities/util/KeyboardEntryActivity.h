@@ -34,6 +34,20 @@ class KeyboardEntryActivity : public Activity {
   bool preventAutoSleep() override { return true; }
 
  private:
+  // Track short presses, long presses, and navigation repeats.
+  struct KeyboardButtonState {
+    bool held = false;
+    bool longHandled = false;
+    bool cursorAtPress = false;
+    unsigned long startedAt = 0;
+    unsigned long lastRepeatAt = 0;
+  };
+
+  KeyboardButtonState horizontalButtonState; // Navigate keyboard columns.
+  KeyboardButtonState verticalButtonState;   // Navigate keyboard rows.
+  KeyboardButtonState confirmButtonState;    // Confirm and cursor editing.
+  KeyboardButtonState backButtonState;       // Cancel, delete, and clear text.
+
   std::string title;
   std::string text;
   size_t maxLength;

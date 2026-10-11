@@ -1,6 +1,8 @@
 #include "HomeActivity.h"
 
 #include <Bitmap.h>
+#include <CoverCache.h>
+#include <DefaultCoverCache.h>
 #include <Epub.h>
 #include <FsHelpers.h>
 #include <GfxRenderer.h>
@@ -26,6 +28,7 @@
 #include "activities/plugins/PluginCatalogActivity.h"  // anyPluginInstalled()
 #include "components/UITheme.h"
 #include "fontIds.h"
+#include "components/themes/roundedraff/RoundedRaffHomeLayout.h"
 
 int HomeActivity::getMenuItemCount() const {
   int count = 4;  // File Browser, Library, File transfer, Settings
@@ -55,6 +58,18 @@ void HomeActivity::loadRecentBooks(int maxBooks) {
     }
 
     recentBooks.push_back(book);
+    if (SETTINGS.uiTheme == CrossPointSettings::ROUNDEDRAFF) {
+      auto& featured = recentBooks.back();
+      // Derive a local Home cache path even when the persisted thumbnail is absent.
+      // This does not alter the recent-book record used by other themes.
+      if (FsHelpers::hasReflowableBookExtension(featured.path)) {
+        auto epub = makeUniqueNoThrow<Epub>(featured.path, "/.crosspoint");
+        featured.coverBmpPath = epub ? epub->getHomeCoverBmpPath() : "";
+      } else if (FsHelpers::hasXtcExtension(featured.path)) {
+        auto xtc = makeUniqueNoThrow<Xtc>(featured.path, "/.crosspoint");
+        featured.coverBmpPath = xtc ? xtc->getHomeCoverBmpPath() : "";
+      }
+    }
   }
 }
 
@@ -168,6 +183,42 @@ void HomeActivity::loadRecentCovers(int coverHeight) {
 
   int progress = 0;
   for (RecentBook& book : recentBooks) {
+    if (!coverGridUi && SETTINGS.uiTheme == CrossPointSettings::ROUNDEDRAFF) {
+      const auto& metrics = UITheme::getInstance().getMetrics();
+      const int coverWidth = std::max(1, UITheme::getInstance().getContentArea(renderer).width - 2 * metrics.contentSidePadding);
+      bool success = !book.coverBmpPath.empty() && CoverCache::valid(book.coverBmpPath, coverWidth);
+      if (!success) {
+        if (!showingLoading) {
+          showingLoading = true;
+          popupRect = GUI.drawPopup(renderer, tr(STR_LOADING_POPUP));
+        }
+        if (FsHelpers::hasReflowableBookExtension(book.path)) {
+          auto epub = makeUniqueNoThrow<Epub>(book.path, "/.crosspoint");
+          if (epub) {
+            book.coverBmpPath = epub->getHomeCoverBmpPath();
+            success = epub->generateHomeCoverBmpFromSource(coverWidth);
+          }
+        } else if (FsHelpers::hasXtcExtension(book.path)) {
+          auto xtc = makeUniqueNoThrow<Xtc>(book.path, "/.crosspoint");
+          if (xtc) {
+            book.coverBmpPath = xtc->getHomeCoverBmpPath();
+            success = xtc->load() && xtc->generateHomeCoverBmp(coverWidth);
+          }
+        }
+        if (!success) {
+          const int height = RoundedRaffHomeLayout::coverHeight(renderer, 4 + (hasLibrarySlot() ? 1 : 0));
+          book.coverBmpPath = prepareDefaultHomeCover(coverWidth, height);
+          success = !book.coverBmpPath.empty();
+          if (!success) LOG_DBG("HOME", "Home cover unavailable: %s", book.path.c_str());
+        }
+        coverRendered = false;
+        coverBufferStored = false;
+        requestUpdate();
+      }
+      ++progress;
+      if (showingLoading) GUI.fillPopupProgress(renderer, popupRect, progress * 100 / recentBooks.size());
+      continue;
+    }
     // The cover grid shares one slot size; generating at any other height
     // would rescale the dithered thumb at draw time and alias badly.
     const int thumbHeight = coverGridUi ? coverGridUi->thumbHeightFor() : coverHeight;
@@ -248,7 +299,8 @@ void HomeActivity::onEnter() {
   }
 
   const auto base = static_cast<int>(recentBooks.size());
-  selectorIndex = initialMenuItem == HomeMenuItem::NONE ? 0 : base + menuItemToIndex(initialMenuItem, hasLibrarySlot());
+  selectorIndex = initialMenuItem == HomeMenuItem::NONE ? 0 : base + menuItemToIndex(initialMenuItem, hasLibrarySlot(),
+        SETTINGS.uiTheme == CrossPointSettings::ROUNDEDRAFF);
 
   // Trigger first update
   requestUpdate();
@@ -309,14 +361,14 @@ void HomeActivity::loop() {
       return;
     }
     const int menuIndex = selectorIndex - static_cast<int>(recentBooks.size());
-    switch (indexToMenuItem(menuIndex, hasLibrarySlot())) {
+    switch (indexToMenuItem(menuIndex, hasLibrarySlot(), SETTINGS.uiTheme == CrossPointSettings::ROUNDEDRAFF)) {
       case HomeMenuItem::FILE_BROWSER:
         onFileBrowserOpen();
         break;
       case HomeMenuItem::LIBRARY:
         onLibraryOpen();
         break;
-      case HomeMenuItem::OPDS_BROWSER:  // the library slot
+      case HomeMenuItem::OPDS_BROWSER:  // optional Plugins / OPDS slot
         hasPlugins ? onPluginsOpen() : onOpdsBrowserOpen();
         break;
       case HomeMenuItem::FILE_TRANSFER:
@@ -375,6 +427,20 @@ void HomeActivity::loop() {
       activateSelection();
       return;
     }
+    if (coverGridUi->usesSequentialNavigation()) {
+      // Use the same NavNext/NavPrevious mapping as ordinary lists. The DIY
+      // board's GPIO1/GPIO2 are side Down/Up; front Left/Right are unassigned.
+      // Traverse books then tabs as one cycle, without a separate button band.
+      buttonNavigator.onNext([this, menuCount] {
+        selectorIndex = ButtonNavigator::nextIndex(selectorIndex, menuCount);
+        requestUpdate();
+      });
+      buttonNavigator.onPrevious([this, menuCount] {
+        selectorIndex = ButtonNavigator::previousIndex(selectorIndex, menuCount);
+        requestUpdate();
+      });
+      return;
+    }
     // Side page buttons walk the covers, front Left/Right walk the tabs
     // (selectorIndex is flat: books first, then the tab items). A press while
     // selection sits in the other band jumps into this band first.
@@ -414,9 +480,12 @@ void HomeActivity::loop() {
   const int recentCount = std::min(static_cast<int>(recentBooks.size()), coverColumnCount);
   const int coverColumnWidth = (content.width - 2 * metrics.contentSidePadding) / coverColumnCount;
   int touchedBook = -1;
+  const int coverTouchBottom = SETTINGS.uiTheme == CrossPointSettings::ROUNDEDRAFF
+      ? RoundedRaffHomeLayout::coverSelectionBottom(renderer, 4 + (hasLibrarySlot() ? 1 : 0))
+      : metrics.homeTopPadding + metrics.homeCoverTileHeight;
   const auto coverTouch = mappedInput.colTouch(touchedBook, content.x + metrics.contentSidePadding, coverColumnWidth,
                                                recentCount, metrics.homeTopPadding,
-                                               metrics.homeTopPadding + metrics.homeCoverTileHeight, coverColumnWidth);
+                                               coverTouchBottom, coverColumnWidth);
   if (coverTouch != MappedInputManager::RowTouch::None) {
     if (coverTouch == MappedInputManager::RowTouch::Down) {
       if (selectorIndex != touchedBook) {
@@ -431,15 +500,21 @@ void HomeActivity::loop() {
     return;
   }
 
-  const int menuTop = metrics.homeTopPadding + metrics.homeCoverTileHeight + metrics.homeMenuTopOffset;
+  const bool horizontalTabs = SETTINGS.uiTheme == CrossPointSettings::ROUNDEDRAFF;
+  const int menuTop = horizontalTabs
+      ? RoundedRaffHomeLayout::menuTop(renderer, 4 + (hasLibrarySlot() ? 1 : 0))
+      : metrics.homeTopPadding + metrics.homeCoverTileHeight + metrics.homeMenuTopOffset;
   const int renderedMenuCount =
       menuCount - (metrics.homeContinueReadingInMenu ? 0 : static_cast<int>(recentBooks.size()));
   int menuRow = -1;
-  // Row height from the theme, not the metrics table: RoundedRaff draws
-  // font-derived rows and the touch grid must match the visuals exactly.
+  // Use horizontal hit slots for RoundedRaff; other themes keep their row grid.
   const int menuRowHeight = GUI.getMenuRowHeight(renderer);
-  const auto menuTouch = mappedInput.rowTouch(menuRow, menuTop, menuRowHeight + metrics.menuSpacing, renderedMenuCount,
-                                              0, INT32_MAX, menuRowHeight);
+  const int tabWidth = (content.width - 2 * metrics.contentSidePadding) / std::max(1, renderedMenuCount);
+  const auto menuTouch = horizontalTabs
+      ? mappedInput.colTouch(menuRow, content.x + metrics.contentSidePadding, tabWidth, renderedMenuCount,
+                             menuTop, menuTop + RoundedRaffHomeLayout::tabHeight, tabWidth)
+      : mappedInput.rowTouch(menuRow, menuTop, menuRowHeight + metrics.menuSpacing, renderedMenuCount,
+                             0, INT32_MAX, menuRowHeight);
   if (menuTouch != MappedInputManager::RowTouch::None) {
     const int touchedIndex =
         metrics.homeContinueReadingInMenu ? menuRow : menuRow + static_cast<int>(recentBooks.size());
@@ -473,8 +548,8 @@ void HomeActivity::render(RenderLock&&) {
   if (coverGridUi) {
     coverGridUi->setSelection(selectorIndex);
     UITheme::getInstance().drawCoverGridHome(*coverGridUi);
-    // Front Left/Right walk the tabs, so their hints read Left/Right; the
-    // side page buttons (unhinted) walk the covers.
+    // Compact Grid uses NavNext/NavPrevious across books and tabs;
+    // large-screen Grid retains its two separate button groups.
     const auto labels = mappedInput.mapLabels(hasContinueReading ? tr(STR_RESUME) : "", tr(STR_SELECT),
                                               tr(STR_DIR_LEFT), tr(STR_DIR_RIGHT));
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
@@ -515,7 +590,14 @@ void HomeActivity::render(RenderLock&&) {
   coverRectX = content.x;
   coverRectY = metrics.homeTopPadding;
   coverRectW = content.width;
-  coverRectH = metrics.homeCoverTileHeight;
+  coverRectH = std::min(metrics.homeCoverTileHeight, pageHeight - metrics.homeTopPadding);
+  if (SETTINGS.uiTheme == CrossPointSettings::ROUNDEDRAFF) {
+    // Snapshot only the actual cover/metadata region, not the enlarged
+    // available layout rectangle or the menu/footer below it.
+    coverRectH = std::min(coverRectH,
+        RoundedRaffHomeLayout::coverHeight(renderer, 4 + (hasLibrarySlot() ? 1 : 0)) +
+        RoundedRaffHomeLayout::metadataHeight(renderer) + RoundedRaffHomeLayout::metadataGap);
+  }
 
   GUI.drawRecentBookCover(renderer, Rect{content.x, metrics.homeTopPadding, content.width, metrics.homeCoverTileHeight},
                           recentBooks, selectorIndex, coverRendered, coverBufferStored, bufferRestored,
@@ -524,11 +606,21 @@ void HomeActivity::render(RenderLock&&) {
   // Build menu items dynamically
   std::vector<const char*> menuItems = {tr(STR_BROWSE_FILES), tr(STR_LIBRARY), tr(STR_FILE_TRANSFER),
                                         tr(STR_SETTINGS_TITLE)};
+  const bool horizontalTabs = SETTINGS.uiTheme == CrossPointSettings::ROUNDEDRAFF;
+  if (horizontalTabs) {
+    // Compact labels match the approved Home preview; overflow is fitted per slot.
+    menuItems = {"Files", "Books", "Share", "Sett"};
+  }
   std::vector<UIIcon> menuIcons = {Folder, Library, Transfer, Settings};
 
   if (hasLibrarySlot()) {
-    menuItems.insert(menuItems.begin() + 2, hasPlugins ? tr(STR_PLUGINS) : tr(STR_OPDS_BROWSER));
-    menuIcons.insert(menuIcons.begin() + 2, Plugins);
+    if (horizontalTabs) {
+      menuItems.push_back(hasPlugins ? "Plug" : "OPDS");
+      menuIcons.push_back(Plugins);
+    } else {
+      menuItems.insert(menuItems.begin() + 2, hasPlugins ? tr(STR_PLUGINS) : tr(STR_OPDS_BROWSER));
+      menuIcons.insert(menuIcons.begin() + 2, Plugins);
+    }
   }
 
   if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
@@ -551,7 +643,7 @@ void HomeActivity::render(RenderLock&&) {
                                             tr(STR_DIR_DOWN));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 
-  renderer.displayBuffer(cleanInitialRefresh && !firstRenderDone ? HalDisplay::HALF_REFRESH : HalDisplay::FAST_REFRESH);
+  renderer.displayBuffer();
 
   if (!firstRenderDone) {
     firstRenderDone = true;

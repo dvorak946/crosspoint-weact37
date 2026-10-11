@@ -3,6 +3,8 @@
 #include <GfxRenderer.h>
 
 #include <cassert>
+#include <algorithm>
+#include <string>
 
 #include "MappedInputManager.h"
 #include "components/UITheme.h"
@@ -101,6 +103,7 @@ void UiTabListActivity::buildTabBar(UiScreen& screen) {
   constexpr int MAX_TABS = 8;
   const int count = tabCount() < MAX_TABS ? tabCount() : MAX_TABS;
   fui::TabItem tabs[MAX_TABS];
+  std::string fittedLabels[MAX_TABS];
   for (int i = 0; i < count; i++) {
     tabs[i].label = tabLabel(i);
     tabs[i].value = static_cast<int16_t>(i);
@@ -119,6 +122,11 @@ void UiTabListActivity::buildTabBar(UiScreen& screen) {
   // body-size labels; zero horizontal contentInset disables the tabBar's
   // label-width shrink.
   const bool tabsFocused = ringPos() == 0;
+#if defined(FREEINK_WEACT37_DRIVER) && FREEINK_WEACT37_DRIVER
+  const bool uniformCompactTabs = compactTabLabels && !mappedInput.hasTouch();
+#else
+  const bool uniformCompactTabs = false;
+#endif
   if (metrics.tabPillFullSlot) {
     tabProps.text = screen.theme().bodyText;
     tabProps.tabInset = fui::Insets{4, 4, 7, 4};
@@ -132,12 +140,28 @@ void UiTabListActivity::buildTabBar(UiScreen& screen) {
     tabProps.tabInset = tabsFocused ? fui::Insets{2, 4, 4, 4} : fui::Insets{2, 4, 0, 4};
     tabProps.contentInset = fui::Insets{2, 0, 2, 0};
   }
+  if (compactTabLabels) {
+    tabProps.text = screen.theme().smallText;  // UI8; keep body/list fonts intact.
+    tabProps.centerLabelInk = true;
+    tabProps.text.maxLines = 1;
+    if (metrics.tabPillFullSlot) {
+      tabProps.tabInset.left = 2;
+      tabProps.tabInset.right = 2;
+    }
+  }
+  if (uniformCompactTabs) {
+    tabProps.text.bold = false;
+    tabProps.gap = 0;
+    tabProps.tabInset = fui::Insets{4, 2, 7, 2};
+    tabProps.contentInset = fui::Insets{2, 0, 2, 0};
+  }
   const int16_t tabLineHeight = screen.target().lineHeight(tabProps.text.font);
   const int16_t preferredTabHeight =
-      mappedInput.hasTouch() ? TOUCH_TAB_BAR_HEIGHT : static_cast<int16_t>(metrics.tabBarHeight);
+      mappedInput.hasTouch() ? TOUCH_TAB_BAR_HEIGHT
+                             : uniformCompactTabs ? 32 : static_cast<int16_t>(metrics.tabBarHeight);
   const int16_t tabBand = preferredTabHeight > tabLineHeight + 10 ? preferredTabHeight : tabLineHeight + 10;
 
-  if (tabPillMaxPad > 0) {
+  if (tabPillMaxPad > 0 && !uniformCompactTabs) {
     // Cap each pill at its label plus this padding: the equal-width slots (and
     // so the tab positions) stay exactly where they were, only the pill stops
     // stretching across the whole slot. The SDK shrinks the pill to content
@@ -158,17 +182,22 @@ void UiTabListActivity::buildTabBar(UiScreen& screen) {
   if (tabsFocused) {
     tabStyles.selected.background = fui::Paint::solid(fui::Color::Black);
     tabStyles.selected.foreground = fui::Paint::solid(fui::Color::White);
-    tabStyles.selected.radius = screen.theme().listRowRadius;
+    tabStyles.selected.radius = tabPillRadiusOverride >= 0 && metrics.tabPillFullSlot
+                                    ? tabPillRadiusOverride : screen.theme().listRowRadius;
   } else if (metrics.tabPillFullSlot) {
     // Legacy RoundedRaff unfocused treatment: same pill, dimmed to dark gray,
     // text stays inverted; no underline.
     tabStyles.selected.background = fui::Paint::dither(fui::Color::DarkGray);
     tabStyles.selected.foreground = fui::Paint::solid(fui::Color::White);
-    tabStyles.selected.radius = screen.theme().listRowRadius;
+    tabStyles.selected.radius = tabPillRadiusOverride >= 0 && metrics.tabPillFullSlot
+                                    ? tabPillRadiusOverride : screen.theme().listRowRadius;
   } else {
     tabStyles.selected.background = fui::Paint::dither(fui::Color::LightGray);
     tabStyles.selected.foreground = fui::Paint::solid(fui::Color::Black);
     tabProps.selectedUnderline = 2;
+  }
+  if (uniformCompactTabs && tabPillRadiusOverride >= 0) {
+    tabStyles.selected.radius = tabPillRadiusOverride;
   }
   // Focus/flash states keep the pill instead of falling back to an unset
   // (blank) style.
@@ -190,9 +219,29 @@ void UiTabListActivity::buildTabBar(UiScreen& screen) {
   // bezel. The divider is drawn here rather than by tabBar(), which would
   // inset it along with the slots; the slot band is shortened by the same 1px
   // so pill geometry is unchanged.
-  const auto side = static_cast<int16_t>(metrics.contentSidePadding);
+  const auto side = static_cast<int16_t>(uniformCompactTabs ? 10 : metrics.contentSidePadding);
   const fui::Rect slotsRect{static_cast<int16_t>(tabRect.x + side), tabRect.y,
                             static_cast<int16_t>(tabRect.width - 2 * side), static_cast<int16_t>(tabRect.height - 1)};
+  if (tabLabelsWithoutEllipsis && count > 0) {
+    // Keep the existing slot layout/font. Fit a whole UTF-8 prefix BEFORE
+    // tabBar renders it, so the SDK never needs to append an ellipsis.
+    const int slotWidth = (slotsRect.width - (count - 1) * tabProps.gap) / count;
+    const int maxLabelWidth = std::max(0, slotWidth - tabProps.tabInset.left - tabProps.tabInset.right -
+                                             tabProps.contentInset.left - tabProps.contentInset.right - 1);
+    for (int i = 0; i < count; ++i) {
+      fittedLabels[i] = tabs[i].label == nullptr ? "" : tabs[i].label;
+      const int indicatorWidth = tabs[i].indicator == fui::TabIndicator::None ? 0
+                                    : tabProps.indicatorSize + tabProps.indicatorGap;
+      const int labelWidth = std::max(0, maxLabelWidth - indicatorWidth);
+      while (!fittedLabels[i].empty() &&
+             screen.target().measureText(tabProps.text.font, fittedLabels[i].c_str(), tabProps.text).width > labelWidth) {
+        size_t end = fittedLabels[i].size() - 1;
+        while (end > 0 && (static_cast<unsigned char>(fittedLabels[i][end]) & 0xC0) == 0x80) --end;
+        fittedLabels[i].resize(end);
+      }
+      tabs[i].label = fittedLabels[i].c_str();
+    }
+  }
   tabProps.divider = false;
   fui::tabBar(screen.frame(), slotsRect, tabProps);
   screen.target().fill(fui::Rect{tabRect.x, static_cast<int16_t>(tabRect.bottom() - 1), tabRect.width, 1},

@@ -17,10 +17,38 @@
 #include "TextSettingsPreview.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
+#include "components/UIScale.h"
+#include "TextSettingsPreviewGeometry.h"
 
 namespace fui = freeink::ui;
 
 namespace {
+// Only the Text Settings preview allocation changes. Current tab rendering,
+// list styling and button handlers continue to use the project's own code.
+int fitPreviewHeight(const GfxRenderer& renderer, textsettings::PreviewLayout& layout,
+                     const ThemeMetrics& metrics, bool hasTouch, int usableHeight) {
+  const auto ui = uiScaleSpec();
+  const int captionHeight = renderer.getTextHeight(UI_10_FONT_ID) + metrics.verticalSpacing;
+  const int tabHeight = std::max(hasTouch ? 50 : metrics.tabBarHeight, renderer.getLineHeight(ui.bodyFontId) + 10);
+  const int rowHeight = std::max(metrics.listRowHeight, renderer.getLineHeight(ui.smallFontId) + 8);
+  const int listInsets = 2 * metrics.listInset + metrics.verticalSpacing;
+  const int minHeight = usableHeight * metrics.previewHeightPercent / 100;
+  const int fontId = SETTINGS.getReaderFontId();
+  const int advance = std::max(1, renderer.getLineHeight(fontId, SETTINGS.getReaderLineCompression()));
+  const int lineH = std::max(renderer.getTextHeight(fontId), renderer.getLineHeight(fontId)) + 2;
+  const int gap = SETTINGS.extraParagraphSpacing ? advance / 2 : 0;
+  const int labelH = renderer.getLineHeight(UI_6_FONT_ID) + 2;
+  const int twoLineMinimum = textsettings::previewgeometry::boundaryHeight(1, advance, lineH, gap, labelH);
+  // Prefer two list rows. At very large reader sizes, keep one scrollable
+  // row instead so a two-paragraph preview still has a chance to fit.
+  const int rows = usableHeight - captionHeight - tabHeight - listInsets - 2 * rowHeight - metrics.listRowGap
+                           >= twoLineMinimum ? 2 : 1;
+  const int maxHeight = std::max(0, usableHeight - captionHeight - tabHeight - listInsets -
+                                   rows * rowHeight - (rows - 1) * metrics.listRowGap);
+  return textsettings::measurePreviewHeight(renderer, layout, metrics.previewPadding,
+                                            std::min(minHeight, maxHeight), maxHeight);
+}
+
 // Tab labels for Font | Size | Layout | Style.
 constexpr StrId TAB_NAME_IDS[] = {StrId::STR_FONT, StrId::STR_SIZE, StrId::STR_LAYOUT, StrId::STR_STYLE};
 
@@ -65,7 +93,11 @@ static_assert(std::size(WORD_SPACING_IDS) == (WORD_SPACING_MAX - WORD_SPACING_MI
 
 TextSettingsActivity::TextSettingsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                                            const SdCardFontRegistry* registry, Tab initialTab)
-    : UiTabListActivity("TextSettings", renderer, mappedInput), registry_(registry), tab_(initialTab) {}
+    : UiTabListActivity("TextSettings", renderer, mappedInput), registry_(registry), tab_(initialTab) {
+  tabLabelsWithoutEllipsis = true;
+  compactTabLabels = true;
+  tabPillRadiusOverride = 4;
+}
 
 const char* TextSettingsActivity::tabLabel(const int index) const { return I18N.get(TAB_NAME_IDS[index]); }
 
@@ -205,6 +237,11 @@ bool TextSettingsActivity::handleButtons() {
 }
 
 void TextSettingsActivity::buildScreen(UiScreen& screen) {
+  const int fittedPreviewHeight = fitPreviewHeight(renderer, previewLayout_, metrics_, mappedInput.hasTouch(), usableHeight);
+  if (previewHeight != fittedPreviewHeight) {
+    previewHeight = fittedPreviewHeight;
+    activeNav().followOnBuild = true;  // Keep the selected row visible after the pane grows.
+  }
   // Content sits below the preview pane (render() draws header + preview
   // directly) and above the caption band + button hints.
   const int tabTop = afterHeader + previewHeight;
@@ -272,6 +309,11 @@ const char* TextSettingsActivity::confirmLabelText() const {
 }
 
 void TextSettingsActivity::drawChrome() {
+  const int fittedPreviewHeight = fitPreviewHeight(renderer, previewLayout_, metrics_, mappedInput.hasTouch(), usableHeight);
+  if (previewHeight != fittedPreviewHeight) {
+    previewHeight = fittedPreviewHeight;
+    activeNav().followOnBuild = true;  // Keep the selected row visible after the pane grows.
+  }
   const auto pageWidth = renderer.getScreenWidth();
 
   GUI.drawHeader(renderer, Rect{0, metrics_.topPadding, pageWidth, metrics_.headerHeight}, tr(STR_TEXT_SETTINGS));

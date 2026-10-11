@@ -40,16 +40,32 @@ void QrUtils::drawQrCode(const GfxRenderer& renderer, const Rect& bounds, const 
   int8_t res = qrcode_initText(&qrcode, qrcodeBytes.get(), version, ECC_LOW, payload);
 
   if (res == 0) {
-    // Determine the optimal pixel size.
-    const int maxDim = std::min(bounds.width, bounds.height);
+    // Clip the requested box to the physical display before choosing a scale.
+    const int left = std::max(0, bounds.x);
+    const int top = std::max(0, bounds.y);
+    const int right = std::min(renderer.getScreenWidth(), bounds.x + bounds.width);
+    const int bottom = std::min(renderer.getScreenHeight(), bounds.y + bounds.height);
+    const int width = right - left;
+    const int height = bottom - top;
+    if (width <= 0 || height <= 0) {
+      LOG_ERR("QR", "QR bounds are outside the screen");
+      return;
+    }
 
-    int px = maxDim / qrcode.size;
-    if (px < 1) px = 1;
+    // QR readers need four blank modules around every edge. Include this
+    // quiet zone when fitting the QR, with an integer number of pixels/module.
+    constexpr int QUIET_ZONE = 4;
+    const int totalModules = qrcode.size + 2 * QUIET_ZONE;
+    const int px = std::min(width, height) / totalModules;
+    if (px < 1) {
+      LOG_ERR("QR", "QR bounds too small: %d x %d for %d modules", width, height, totalModules);
+      return;
+    }
 
-    // Calculate centering X and Y
-    const int qrDisplaySize = qrcode.size * px;
-    const int xOff = bounds.x + (bounds.width - qrDisplaySize) / 2;
-    const int yOff = bounds.y + (bounds.height - qrDisplaySize) / 2;
+    renderer.fillRect(left, top, width, height, false);
+    const int qrDisplaySize = totalModules * px;
+    const int xOff = left + (width - qrDisplaySize) / 2 + QUIET_ZONE * px;
+    const int yOff = top + (height - qrDisplaySize) / 2 + QUIET_ZONE * px;
 
     // Draw the QR Code
     for (uint8_t cy = 0; cy < qrcode.size; cy++) {

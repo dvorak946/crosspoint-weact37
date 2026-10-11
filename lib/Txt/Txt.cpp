@@ -1,5 +1,7 @@
 #include "Txt.h"
 
+#include <BmpCoverConverter.h>
+
 #include <Epub/BookMetadataCache.h>
 #include <FsHelpers.h>
 #include <HalStorage.h>
@@ -41,7 +43,7 @@ std::string Txt::findCompanionCoverImage(const std::string& filepath) {
 }
 
 bool Txt::convertCoverImageToBmp(const std::string& imagePath, const std::string& destBmpPath, int thumbHeight,
-                                 bool cropped, bool originalThresholds) {
+                                 bool cropped, bool originalThresholds, int targetWidth) {
   if (!Storage.exists(imagePath.c_str())) return false;
 
   const bool isBmp = FsHelpers::hasBmpExtension(imagePath);
@@ -55,7 +57,11 @@ bool Txt::convertCoverImageToBmp(const std::string& imagePath, const std::string
   }
 
   bool success = false;
-  if (isBmp) {
+  if (targetWidth > 0) {
+    if (isBmp) success = bmpCoverTo1BitWithWidth(src, dst, targetWidth);
+    else if (isJpg) success = JpegToBmpConverter::jpegFileTo1BitBmpStreamWithWidth(src, dst, targetWidth);
+    else if (isPng) success = PngToBmpConverter::pngFileTo1BitBmpStreamWithWidth(src, dst, targetWidth);
+  } else if (isBmp) {
     uint8_t buf[128];
     int n;
     success = true;

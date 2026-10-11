@@ -18,8 +18,6 @@
 namespace {
 
 constexpr unsigned long POPUP_DURATION_MS = 1500;
-constexpr unsigned long WORD_REPEAT_START_MS = 500;
-constexpr unsigned long WORD_REPEAT_INTERVAL_MS = 500;
 
 // A token is selectable when it has an ASCII alphanumeric or a non-ASCII
 // codepoint outside U+2000-U+206F (dashes, bullets and other General
@@ -51,6 +49,7 @@ void DictionaryWordSelectActivity::onEnter() {
   // full-repaint path as the fallback.
   snapshot = makeUniqueNoThrow<uint8_t[]>(SNAPSHOT_CAPACITY);
   extractWords();
+  resetNavigation();
   // Start on the middle row's word nearest mid-screen instead of top-left:
   // any word on the page is then at most half a page of moves away.
   if (!words.empty()) {
@@ -153,7 +152,41 @@ void DictionaryWordSelectActivity::moveVertical(const int direction) {
   }
 }
 
+void DictionaryWordSelectActivity::resetNavigation() {
+  // Nav1 is raw Down, Nav2 raw Up on the user's swapped GPIO wiring.
+  // Front Right/Left remain supported too.
+  nextNavigation.reset(mappedInput.isPressed(MappedInputManager::Button::Down) ||
+                       mappedInput.isPressed(MappedInputManager::Button::Right));
+  previousNavigation.reset(mappedInput.isPressed(MappedInputManager::Button::Up) ||
+                           mappedInput.isPressed(MappedInputManager::Button::Left));
+}
+
+void DictionaryWordSelectActivity::navigateWords() {
+  const auto now = static_cast<uint32_t>(millis());
+  const auto next = nextNavigation.update(mappedInput.isPressed(MappedInputManager::Button::Down) ||
+                                          mappedInput.isPressed(MappedInputManager::Button::Right), now);
+  const auto previous = previousNavigation.update(mappedInput.isPressed(MappedInputManager::Button::Up) ||
+                                                  mappedInput.isPressed(MappedInputManager::Button::Left), now);
+  const auto move = [this](DictionaryButtonNavigation::Event event, int direction) {
+    if (event == DictionaryButtonNavigation::Event::Row) {
+      moveVertical(direction);
+    } else if (event == DictionaryButtonNavigation::Event::Word) {
+      const int target = selected + direction;
+      // The word vector is in reading order, including transitions between rows.
+      if (target >= 0 && target < static_cast<int>(words.size())) {
+        selected = target;
+        requestUpdate();
+      }
+    }
+  };
+  // Simultaneous opposite actions cancel instead of moving twice.
+  if (next != DictionaryButtonNavigation::Event::None && previous != DictionaryButtonNavigation::Event::None) return;
+  move(next, 1);
+  move(previous, -1);
+}
+
 void DictionaryWordSelectActivity::performLookup() {
+  resetNavigation();
   popup = Popup::Busy;
   if (!dictOpenAttempted) {
     dictOpenAttempted = true;
@@ -183,7 +216,10 @@ void DictionaryWordSelectActivity::performLookup() {
     startActivityForResult(
         std::make_unique<DictionaryDefinitionActivity>(renderer, mappedInput, std::move(headword),
                                                        std::move(definition), dict.definitionsAreHtml()),
-        [this](const ActivityResult&) { requestUpdate(); });
+        [this](const ActivityResult&) {
+          resetNavigation();
+          requestUpdate();
+        });
     return;
   }
   // Name the failure: a genuine miss is "Not found"; a word that WAS found but
@@ -272,27 +308,7 @@ void DictionaryWordSelectActivity::loop() {
     return;
   }
 
-  const bool hasNextWord = selected + 1 < static_cast<int>(words.size());
-  const unsigned long now = millis();
-  const bool repeat =
-      mappedInput.getHeldTime() >= WORD_REPEAT_START_MS && now - lastHorizontalMoveTime >= WORD_REPEAT_INTERVAL_MS;
-  const bool moveLeft = mappedInput.wasPressed(MappedInputManager::Button::ScreenLeft) ||
-                        (repeat && mappedInput.isPressed(MappedInputManager::Button::ScreenLeft));
-  const bool moveRight = mappedInput.wasPressed(MappedInputManager::Button::ScreenRight) ||
-                         (repeat && mappedInput.isPressed(MappedInputManager::Button::ScreenRight));
-  if (moveLeft && selected > 0) {
-    selected--;
-    lastHorizontalMoveTime = now;
-    requestUpdate();
-  } else if (moveRight && hasNextWord) {
-    selected++;
-    lastHorizontalMoveTime = now;
-    requestUpdate();
-  } else if (mappedInput.wasPressed(MappedInputManager::Button::ScreenUp)) {
-    moveVertical(-1);
-  } else if (mappedInput.wasPressed(MappedInputManager::Button::ScreenDown)) {
-    moveVertical(1);
-  }
+  navigateWords();
 }
 
 // Saves the pixels under words[selected]'s highlight box, then draws the
@@ -344,8 +360,11 @@ void DictionaryWordSelectActivity::drawHints() const {
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
     return;
   }
-  const auto labels = mappedInput.mapDirectionalLabels(tr(STR_BACK), tr(STR_LOOKUP), tr(STR_DIR_LEFT),
-                                                       tr(STR_DIR_RIGHT), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
+  // These controls use fixed raw buttons; cancel mapLabels' rotation swap.
+  const bool swapped = mappedInput.isNavDirectionSwapped();
+  const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_LOOKUP),
+                                            swapped ? tr(STR_DIR_RIGHT) : tr(STR_DIR_LEFT),
+                                            swapped ? tr(STR_DIR_LEFT) : tr(STR_DIR_RIGHT));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 }
 

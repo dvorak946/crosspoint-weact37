@@ -2,8 +2,8 @@
 #include "activities/UiListActivity.h"
 
 // Clock configuration under System settings: timezone, 12/24-hour format,
-// home-header display, and manual NTP sync. Only reachable when
-// halClock.isAvailable() — SettingsActivity gates the entry.
+// home-header display, and manual NTP sync. Available with an external RTC
+// or the ESP32 system clock; invalid time is shown as "--:--".
 class ClockSettingsActivity final : public UiListActivity {
  public:
   explicit ClockSettingsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput);

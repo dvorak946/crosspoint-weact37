@@ -1,5 +1,7 @@
 #include <Arduino.h>
 #include <BoardConfig.h>
+#include "customUiFonts.h"  // Register the additional compact UI fonts.
+#include "compactReaderFonts.h"  // Register Noto reader font sizes 8 through 11.
 #include <Epub.h>
 #include <FontCacheManager.h>
 #include <FontDecompressor.h>
@@ -408,6 +410,7 @@ void setupDisplayAndFonts(bool seamless = false) {
   renderer.setFontCacheManager(&fontCacheManager);
   renderer.insertFont(NOTOSERIF_14_FONT_ID, notoserif14FontFamily);
 #ifndef OMIT_FONTS
+  registerCompactReaderFonts(renderer);  // Add all four styles for each compact reader size.
   renderer.insertFont(NOTOSERIF_12_FONT_ID, notoserif12FontFamily);
   renderer.insertFont(NOTOSERIF_16_FONT_ID, notoserif16FontFamily);
   renderer.insertFont(NOTOSERIF_18_FONT_ID, notoserif18FontFamily);
@@ -419,6 +422,7 @@ void setupDisplayAndFonts(bool seamless = false) {
 #endif  // OMIT_FONTS
   renderer.insertFont(UI_10_FONT_ID, ui10FontFamily);
   renderer.insertFont(UI_12_FONT_ID, ui12FontFamily);
+  registerCustomUiFonts(renderer);  // Add UI font sizes 6, 7, 8 and 9.
   renderer.insertFont(SMALL_FONT_ID, smallFontFamily);
 
   // Discover and load SD card fonts
@@ -694,6 +698,16 @@ void loop() {
       delay(50);
     }
     return;
+  }
+
+  // CLOCK_WIFI: do not touch SD settings during an exclusive USB-storage loop.
+  const auto clockStatusBefore = halClock.ntpSyncStatus();
+  const auto clockStatusAfter = halClock.pollNtpSync();
+  if (clockStatusBefore == HalClock::SyncStatus::Pending && clockStatusAfter == HalClock::SyncStatus::Success &&
+      !SETTINGS.clockHasBeenSynced) {
+    RenderLock lock;
+    SETTINGS.clockHasBeenSynced = 1;
+    SETTINGS.saveToFile();
   }
 
   halTiltSensor.update(SETTINGS.tiltPageTurn, SETTINGS.orientation, activityManager.isReaderActivity());

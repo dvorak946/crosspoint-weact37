@@ -61,8 +61,17 @@ inline void applySharedUiTheme(App& app, const freeink::ui::GfxRendererTarget& t
   app.setThemeRef(&sharedUiThemeCell());
 }
 
-// Bind the uiScale fonts before FreeInkApp's constructor derives its theme
-// metrics from the body font's line height.
+// Every WeAct theme uses the same compact battery/clock font. Other boards
+// retain their existing theme policy; list and reader fonts are independent.
+inline int headerStatusFontId() {
+#if defined(FREEINK_WEACT37_DRIVER) && FREEINK_WEACT37_DRIVER
+  return UI_6_FONT_ID;
+#else
+  return SETTINGS.uiTheme == CrossPointSettings::ROUNDEDRAFF ? UI_6_FONT_ID : SMALL_FONT_ID;
+#endif
+}
+
+// Bind the uiScale fonts before FreeInkApp derives metrics from the body font.
 inline freeink::ui::GfxRendererTarget makeUiTarget(const GfxRenderer& renderer) {
   freeink::ui::GfxRendererTarget target(renderer, BoardConfig::hasTouch());
   const auto spec = uiScaleSpec();
@@ -71,7 +80,7 @@ inline freeink::ui::GfxRendererTarget makeUiTarget(const GfxRenderer& renderer) 
   target.setFont(freeink::ui::GfxRendererTarget::FONT_TITLE, spec.titleFontId);
   // Status chrome (header battery percent, clock) stays at the fixed small
   // font; the uiScale FONT_SMALL is for list subtitles.
-  target.setFont(freeink::ui::GfxRendererTarget::FONT_LABEL, SMALL_FONT_ID);
+  target.setFont(freeink::ui::GfxRendererTarget::FONT_LABEL, headerStatusFontId());
   return target;
 }
 

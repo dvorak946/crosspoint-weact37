@@ -14,6 +14,8 @@
 #include "ReaderFontSizes.h"
 #include "SettingsList.h"
 #include "fontIds.h"
+#include "customUiFontIds.h"  // Existing compact UI fonts for the status bar.
+#include "compactReaderFontIds.h"  // Additional Noto reader sizes 10 and 11.
 #include "util/ParagraphIndentMigration.h"
 
 namespace {
@@ -278,6 +280,7 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
 
 CrossPointSettings::StatusBarSpec CrossPointSettings::statusBarSpec() const {
   StatusBarSpec spec;
+  spec.fontId = getStatusBarFontId();
   spec.showChapterPageCount = statusBarChapterPageCount != 0;
   spec.showBookProgressPercent = statusBarBookProgressPercentage != 0;
   spec.titleMode = statusBarTitle;
@@ -394,6 +397,18 @@ void CrossPointSettings::clearSdFontFamily() {
   saveToFile();
 }
 
+int CrossPointSettings::getStatusBarFontId() const {
+  switch (statusBarFontSize) {
+    case STATUS_BAR_FONT_7:
+      return UI_7_FONT_ID;
+    case STATUS_BAR_FONT_6:
+      return UI_6_FONT_ID;
+    case STATUS_BAR_FONT_DEFAULT:
+    default:
+      return SMALL_FONT_ID;  // Keep the original Noto Sans 8 appearance.
+  }
+}
+
 int CrossPointSettings::getReaderFontId() const {
   // Check SD card font first
   if (sdFontFamilyName[0] != '\0' && sdFontIdResolver) {
@@ -410,6 +425,10 @@ int CrossPointSettings::getReaderFontId() const {
       snapToNearestPointSize(BUILTIN_READER_POINT_SIZES, std::size(BUILTIN_READER_POINT_SIZES), fontPointSize);
   const bool sans = (fontFamily == NOTOSANS);
   switch (pt) {
+    case 10:
+      return sans ? COMPACT_NOTOSANS_10_FONT_ID : COMPACT_NOTOSERIF_10_FONT_ID;
+    case 11:
+      return sans ? COMPACT_NOTOSANS_11_FONT_ID : COMPACT_NOTOSERIF_11_FONT_ID;
     case 12:
       return sans ? NOTOSANS_12_FONT_ID : NOTOSERIF_12_FONT_ID;
     case 16:

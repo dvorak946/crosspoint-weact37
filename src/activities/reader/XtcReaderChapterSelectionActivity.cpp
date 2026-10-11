@@ -116,6 +116,10 @@ void XtcReaderChapterSelectionActivity::buildScreen(UiScreen& screen) {
   props.count = static_cast<uint16_t>(rowItems.size());
   props.action = ACTION_ROW;
   props.inputMask = fui::InputTouch;  // physical buttons stay in loop()
+  // Match Settings row typography and theme padding, with a third line for
+  // longer chapter names. Set the style before viewport measurement.
+  props.labelText = screen.theme().smallText;
+  props.labelText.maxLines = 3;
   syncListViewport(screen, props);
   screen.list(props);
 }

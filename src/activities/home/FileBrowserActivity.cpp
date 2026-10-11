@@ -1,6 +1,7 @@
 #include "FileBrowserActivity.h"
 
 #include <FsHelpers.h>
+#include <InternalPaths.h>
 #include <GfxRenderer.h>
 #include <HalStorage.h>
 #include <I18n.h>
@@ -91,6 +92,7 @@ void FileBrowserActivity::loadFiles() {
   files.clear();
   prewarmedStart = -1;  // new folder contents: re-prewarm the visible window
 
+  if (FsHelpers::isInternalCachePath(basepath)) return;
   auto root = Storage.open(basepath.c_str());
   if (!root || !root.isDirectory()) {
     return;
@@ -116,7 +118,8 @@ void FileBrowserActivity::loadFiles() {
   for (auto file = root.openNextFile(); file; file = root.openNextFile()) {
     file.getName(fileNameBuffer.get(), NAME_BUFFER_SIZE);
     const bool isDirectory = file.isDirectory();
-    if ((!SETTINGS.showHiddenFiles && fileNameBuffer[0] == '.') ||
+    if (FsHelpers::isInternalCacheEntry(basepath, fileNameBuffer.get()) ||
+        (!SETTINGS.showHiddenFiles && fileNameBuffer[0] == '.') ||
         strcmp(fileNameBuffer.get(), "System Volume Information") == 0) {
       continue;
     }

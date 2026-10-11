@@ -24,6 +24,7 @@
 #include "components/icons/listIcons.h"
 #include "components/icons/search32.h"
 #include "fontIds.h"
+#include "customUiFontIds.h"
 #include "util/BookCacheUtils.h"
 
 namespace fui = freeink::ui;
@@ -67,9 +68,12 @@ const char* tabLabelFor(const int tab) {
 
 LibraryListActivity::LibraryListActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
     : UiTabListActivity("Library", renderer, mappedInput, true) {
-  // Three short tab labels: a full-slot pill would stretch across a third of
-  // the screen, so cap it at the label plus padding (slots stay put).
-  tabPillMaxPad = 16;
+  // Match Settings: equal-width compact tabs, centered UI8 labels, no
+  // ellipsis, and a 4px selected-tab radius. Use the shared tab renderer.
+  tabPillMaxPad = 0;
+  tabLabelsWithoutEllipsis = true;
+  tabPillRadiusOverride = 4;
+  compactTabLabels = true;
 }
 
 void LibraryListActivity::onEnter() {
@@ -816,8 +820,16 @@ void LibraryListActivity::buildRows(UiScreen& screen) {
   props.count = static_cast<uint16_t>(count);
   props.action = ACTION_ROW;
   props.inputMask = fui::InputTouch | fui::InputLongPress;
-  props.labelText = screen.theme().bodyText;
-  props.labelText.maxLines = 1;
+  // Book titles and authors share the compact Ubuntu 8 font.
+  // Explicit weights keep the title bold and the author regular in every theme.
+  props.labelText = screen.theme().smallText;
+  props.labelText.bold = true;
+  props.labelText.maxLines = 2;
+  props.subtitleText = screen.theme().smallText;
+  props.subtitleText.bold = false;
+  props.subtitleText.maxLines = 1;
+  // Scale the SDK's 24px file-type bitmap into a 20px icon slot.
+  props.iconSize = 20;
   // Breathing room between rows; the dense theme default packs the two-line
   // rows edge-to-edge.
   props.rowGap = std::max<int16_t>(screen.theme().listRowGap, 6);
@@ -875,7 +887,7 @@ void LibraryListActivity::buildRows(UiScreen& screen) {
 
     item.label = title.c_str();
     // Group headings stay bare; every book row gets its file-type icon.
-    if (!groupsCollapsed && !rowFile.empty()) item.icon = listIconFor(UITheme::getFileIcon(rowFile), 32);
+    if (!groupsCollapsed && !rowFile.empty()) item.icon = listIconFor(UITheme::getFileIcon(rowFile), 24);
     item.actionValue = static_cast<int16_t>(entry);
     winItems.push_back(item);
     rows++;
@@ -961,7 +973,7 @@ void LibraryListActivity::buildScreen(UiScreen& screen) {
   const auto& metrics = UITheme::getInstance().getMetrics();
   // The position readout owns the line above the hints; rows must not overlap
   // it.
-  const int16_t readoutReserved = static_cast<int16_t>(renderer.getLineHeight(SMALL_FONT_ID) + metrics.verticalSpacing);
+  const int16_t readoutReserved = static_cast<int16_t>(renderer.getLineHeight(UI_6_FONT_ID) + metrics.verticalSpacing);
   buildHeader(screen);
   screen.setContentMarginFromScreen(fui::Insets{static_cast<int16_t>(metrics.topPadding + metrics.headerHeight), 0,
                                                 static_cast<int16_t>(metrics.buttonHintsHeight + readoutReserved), 0});
@@ -994,10 +1006,10 @@ void LibraryListActivity::drawPositionReadout() const {
   const char* positionFormat = groupsCollapsed ? tr(STR_LIBRARY_GROUP_POSITION) : tr(STR_LIBRARY_POSITION);
   snprintf(buf, sizeof(buf), positionFormat, selectedEntry() + 1, count);
   const auto& metrics = UITheme::getInstance().getMetrics();
-  const int width = renderer.getTextWidth(SMALL_FONT_ID, buf);
+  const int width = renderer.getTextWidth(UI_6_FONT_ID, buf);
   const int x = renderer.getScreenWidth() - width - SIDE_PADDING;
-  const int y = renderer.getScreenHeight() - metrics.buttonHintsHeight - renderer.getLineHeight(SMALL_FONT_ID);
-  renderer.drawText(SMALL_FONT_ID, x, y, buf, true);
+  const int y = renderer.getScreenHeight() - metrics.buttonHintsHeight - renderer.getLineHeight(UI_6_FONT_ID);
+  renderer.drawText(UI_6_FONT_ID, x, y, buf, true);
 }
 
 const char* LibraryListActivity::headerTitle() const {
@@ -1019,9 +1031,16 @@ void LibraryListActivity::drawHoldHelp() const {
   if (!help) return;
 
   const auto& metrics = UITheme::getInstance().getMetrics();
-  const int lineHeight = renderer.getLineHeight(SMALL_FONT_ID);
+  const int lineHeight = renderer.getLineHeight(UI_6_FONT_ID);
   const int y = renderer.getScreenHeight() - metrics.buttonHintsHeight - lineHeight;
-  GUI.drawHelpText(renderer, Rect{SIDE_PADDING, y, renderer.getScreenWidth() / 2 - SIDE_PADDING, lineHeight}, help);
+  char position[32];
+  snprintf(position, sizeof(position), tr(STR_LIBRARY_POSITION), selectedEntry() + 1, listCount());
+  const int positionWidth = listCount() > 0 ? renderer.getTextWidth(UI_6_FONT_ID, position) : 0;
+  const int maxWidth = std::min(renderer.getScreenWidth() / 2 - SIDE_PADDING - 3,
+                                renderer.getScreenWidth() - 2 * SIDE_PADDING - positionWidth - 6);
+  if (maxWidth <= 0) return;
+  const auto fitted = renderer.truncatedText(UI_6_FONT_ID, help, maxWidth);
+  renderer.drawText(UI_6_FONT_ID, SIDE_PADDING, y, fitted.c_str(), true);
 }
 
 // OptionPopup is a self-contained modal: it owns the whole frame (hints

@@ -7,16 +7,20 @@
 #include <LibraryBuilder.h>
 #include <Logging.h>
 #include <Memory.h>
+#include <Utf8.h>
 #include <WiFi.h>
 
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <string>
 
 #include "AboutActivity.h"
 #include "ButtonRemapActivity.h"
 #include "ClearCacheActivity.h"
 #include "ClockSettingsActivity.h"
+#include "DictionarySettingsActivity.h"
+#include "util/DictionarySettings.h"
 #include "CrossPointSettings.h"
 #include "FontDownloadActivity.h"
 #include "HomeButtonSettingsActivity.h"
@@ -39,11 +43,17 @@
 #include "components/UIThemeTokens.h"
 #include "components/UiAppHelpers.h"
 #include "fontIds.h"
+#include "customUiFontIds.h"
+#include "components/UIScale.h"
 
 namespace fui = freeink::ui;
 
 SettingsActivity::SettingsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
-    : UiTabListActivity("Settings", renderer, mappedInput) {}
+    : UiTabListActivity("Settings", renderer, mappedInput) {
+  tabLabelsWithoutEllipsis = true;
+  compactTabLabels = true;
+  tabPillRadiusOverride = 4;
+}
 
 void SettingsActivity::rebuildSettingsLists() {
   displaySettings.clear();
@@ -75,6 +85,9 @@ void SettingsActivity::rebuildSettingsLists() {
       // (they stay in the shared list for the web settings API)
       if (setting.inTextSettings) continue;
       readerSettings.push_back(setting);
+      if (setting.key && std::strcmp(setting.key, "dictionaryName") == 0) {
+        readerSettings.push_back(SettingInfo::Action(StrId::STR_DICTIONARY, SettingAction::DictionarySettings));
+      }
     } else if (setting.category == StrId::STR_CAT_CONTROLS) {
       if (BoardConfig::hasHomeKey() && setting.valuePtr == &CrossPointSettings::longPressMenuFunction) continue;
       if (setting.valuePtr == &CrossPointSettings::pwrBtnFootnoteBack &&
@@ -184,7 +197,8 @@ void SettingsActivity::rebuildRowItems() {
   rowItems_.reserve(settings.size());
   for (size_t i = 0; i < settings.size(); i++) {
     fui::ListItem item;
-    item.label = I18N.get(settings[i].nameId);
+    item.label = settings[i].action == SettingAction::DictionarySettings
+                     ? DictionarySettings::title() : I18N.get(settings[i].nameId);
     item.actionValue = static_cast<int16_t>(i);
     rowItems_.push_back(item);
   }
@@ -412,6 +426,13 @@ void SettingsActivity::toggleCurrentSetting() {
                                  rebuildSettingsLists();
                                });
         break;
+      case SettingAction::DictionarySettings:
+        if (auto activity = makeUniqueNoThrow<DictionarySettingsActivity>(renderer, mappedInput)) {
+          startActivityForResult(std::move(activity), resultHandler);
+        } else {
+          LOG_ERR("SETTINGS", "OOM: DictionarySettingsActivity");
+        }
+        break;
       case SettingAction::TextSettings:
         startActivityForResult(std::make_unique<TextSettingsActivity>(renderer, mappedInput, &sdFontSystem.registry(),
                                                                       TextSettingsActivity::Tab::Family),
@@ -588,12 +609,42 @@ void SettingsActivity::drawChrome() {
   const auto pageWidth = renderer.getScreenWidth();
   const auto& metrics = UITheme::getInstance().getMetrics();
 
-  // Header via GUI.drawHeader (already FreeInkUI-themed) for the battery
-  // indicator; the rest of the screen renders through the app.
-  // Version rides in the header's trailing label slot: the footer position
-  // conflicts with button hints on non-touch devices.
+  // Paint the theme's title without handing a full version string to the
+  // header subtitle slot. Fit the UI6 version beside the actual title ink.
   GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_SETTINGS_TITLE),
-                 CROSSPOINT_VERSION);
+                 nullptr);
+  const int titleFont = uiScaleSpec().titleFontId;
+  int marginTop, marginRight, marginBottom, marginLeft;
+  renderer.getOrientedViewableTRBL(&marginTop, &marginRight, &marginBottom, &marginLeft);
+  const int contentLeft = marginLeft + metrics.headerSidePadding;
+  const int contentRight = pageWidth - marginRight - metrics.headerSidePadding;
+  const int contentWidth = std::max(0, contentRight - contentLeft);
+  const int titleWidth = std::min(contentWidth,
+      std::max(renderer.getTextWidth(titleFont, tr(STR_SETTINGS_TITLE)),
+               renderer.getTextWidth(titleFont, tr(STR_SETTINGS_TITLE), EpdFontFamily::BOLD)));
+  const bool versionOnLeft = metrics.headerTitleAlign == 2;
+  const int titleLeft = metrics.headerTitleAlign == 1 ? contentLeft + (contentWidth - titleWidth) / 2
+                        : versionOnLeft ? contentRight - titleWidth : contentLeft;
+  constexpr int titleGap = 8;
+  const int maxVersionWidth = std::max(0, versionOnLeft ? titleLeft - contentLeft - titleGap
+                                                      : contentRight - titleLeft - titleWidth - titleGap);
+
+  // Limit codepoints, not bytes: a custom version tag must not end halfway
+  // through a UTF-8 character. No ellipsis; the firmware name is at most 12.
+  const auto* first = reinterpret_cast<const unsigned char*>(CROSSPOINT_VERSION);
+  const auto* last = first;
+  for (int count = 0; count < 12 && *last; ++count) utf8NextCodepoint(&last);
+  std::string version(reinterpret_cast<const char*>(first), reinterpret_cast<const char*>(last));
+  while (!version.empty() && renderer.getTextWidth(UI_6_FONT_ID, version.c_str()) > maxVersionWidth) {
+    utf8RemoveLastChar(version);
+  }
+  if (!version.empty()) {
+    const int versionHeight = renderer.getTextHeight(UI_6_FONT_ID);
+    const int y = metrics.topPadding + metrics.batteryBarHeight +
+                  (metrics.headerHeight - metrics.batteryBarHeight - versionHeight) / 2;
+    const int x = versionOnLeft ? contentLeft : contentRight - renderer.getTextWidth(UI_6_FONT_ID, version.c_str());
+    renderer.drawText(UI_6_FONT_ID, x, y, version.c_str());
+  }
 }
 
 void SettingsActivity::drawFooter() {

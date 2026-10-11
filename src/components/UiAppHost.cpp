@@ -9,6 +9,7 @@ UiAppHost::UiAppHost(const GfxRenderer& renderer)
 
 void UiAppHost::resetUi() {
   uiReady = false;
+  uiTarget.setFont(fui::GfxRendererTarget::FONT_LABEL, headerStatusFontId());
   applySharedUiTheme(app, uiTarget);
 }
 

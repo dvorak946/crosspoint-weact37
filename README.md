@@ -1,3 +1,13 @@
+# CrossPoint — WeActStudio ESP32-S3
+
+A CrossPoint fork for an ESP32-S3 DIY e-reader with a WeActStudio 3.7-inch e-paper display, an adapted display driver, customized UI, and a clock without an external RTC module.
+
+**Documentation / Dokumentasi:**
+- [English](README-WeAct37.en.md)
+- [Bahasa Indonesia](README-WeAct37.id.md)
+
+---
+
 # CrossPoint Reader
 
 [![Fund contributors](https://img.shields.io/badge/%F0%9F%91%91_Fund_contributors-royalty.dev-BB953A?style=for-the-badge&labelColor=1a1a1a)](https://app.royalty.dev/crosspoint-reader/crosspoint-reader)

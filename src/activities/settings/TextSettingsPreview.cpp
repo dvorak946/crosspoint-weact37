@@ -15,6 +15,8 @@
 
 #include "CrossPointSettings.h"
 #include "fontIds.h"
+#include "customUiFontIds.h"
+#include "TextSettingsPreviewGeometry.h"
 
 namespace textsettings {
 
@@ -30,7 +32,7 @@ CssTextAlign toCssAlign(uint8_t align) {
 }
 
 // Lay the sample text out through the reader engine into layout.lines
-void relayout(PreviewLayout& layout, const GfxRenderer& renderer, int fontId, int textWidth) {
+void relayout(PreviewLayout& layout, const GfxRenderer& renderer, int fontId, int textWidth, const char* text) {
   layout.lines.clear();
 
   BlockStyle style;
@@ -41,7 +43,6 @@ void relayout(PreviewLayout& layout, const GfxRenderer& renderer, int fontId, in
                     SETTINGS.paragraphIndentSpaces);
 
   // Feed one space-separated word at a time; addWord handles NFC/CJK/RTL/focus splitting
-  const char* text = I18N.get(StrId::STR_FONT_PREVIEW_TEXT);
   std::string word;
   for (const char* p = text;; p++) {
     if (*p == ' ' || *p == '\0') {
@@ -63,44 +64,27 @@ void relayout(PreviewLayout& layout, const GfxRenderer& renderer, int fontId, in
 
 }  // namespace
 
-void renderPreview(const GfxRenderer& renderer, PreviewLayout& layout, int previewPadding, int labelGap, int top,
-                   int height, const char* familyName, const char* sizeName) {
-  const int left = previewPadding;
-  const int width = renderer.getScreenWidth() - (previewPadding * 2);
-  if (width <= 0 || height <= 0) return;
-
-  const int labelH = renderer.getTextHeight(UI_10_FONT_ID);
-  const int labelReserved = labelH + labelGap + previewPadding;
-
-  char labelBuf[128];
-  snprintf(labelBuf, sizeof(labelBuf), "%s \"%s, %s\"", tr(STR_PREVIEW), familyName, sizeName);
-  const int labelY = top + height - previewPadding - labelH;
-  renderer.drawText(UI_10_FONT_ID, left, labelY, labelBuf);
-
+int measurePreviewHeight(const GfxRenderer& renderer, PreviewLayout& layout, int previewPadding,
+                         int minHeight, int maxHeight) {
   const int fontId = SETTINGS.getReaderFontId();
-  if (fontId == 0) return;
-
-  const int lineH = renderer.getTextHeight(fontId);
-  if (lineH <= 0) return;
-
-  const int textLeft = left + SETTINGS.screenMargin;
-  const int textWidth = width - 2 * SETTINGS.screenMargin;
-  if (textWidth <= 0) return;
-
+  const int textWidth = renderer.getScreenWidth() - 2 * (previewPadding + SETTINGS.screenMargin);
+  if (fontId == 0 || textWidth <= 0 || maxHeight <= 0) {
+    layout.lines.clear();
+    layout.key = PreviewKey{};
+    return std::clamp(minHeight, 0, std::max(0, maxHeight));
+  }
   const float compression = SETTINGS.getReaderLineCompression();
   const int lineAdvance = std::max(1, renderer.getLineHeight(fontId, compression));
+  // getTextHeight() is the ascender only. Reserve the normal line box plus
+  // a small tail allowance so letters such as g/p cannot reach the label.
+  const int lineH = std::max(renderer.getTextHeight(fontId), renderer.getLineHeight(fontId)) + 2;
   const int paragraphGap = SETTINGS.extraParagraphSpacing ? lineAdvance / 2 : 0;
-
-  // Re-lay-out (and re-prewarm glyphs) only when a layout-affecting setting or the
-  // geometry changed; else reuse the cache. The prewarm inputs are (fontId, constant
-  // sample text, styleMask<-focusReading), all of which are key fields, so a matching
-  // key means an identical prewarm call. This relies on nothing else evicting the SD
-  // glyph cache while this activity is up — true today: the only evictor is
-  // FontCacheManager::PrewarmScope, used solely by the reader/dictionary activities.
+  const int labelH = renderer.getLineHeight(UI_6_FONT_ID) + 2;
   const PreviewKey key{.fontId = fontId,
                        .fontPointSize = SETTINGS.fontPointSize,
                        .screenMargin = SETTINGS.screenMargin,
                        .textWidth = textWidth,
+                       .maxPreviewHeight = maxHeight,
                        .lineCompression = compression,
                        .alignment = SETTINGS.paragraphAlignment,
                        .extraParagraphSpacing = SETTINGS.extraParagraphSpacing != 0,
@@ -110,20 +94,52 @@ void renderPreview(const GfxRenderer& renderer, PreviewLayout& layout, int previ
                        .focusReading = SETTINGS.focusReadingEnabled != 0,
                        .hyphenation = SETTINGS.hyphenationEnabled != 0};
   if (key != layout.key) {
+    std::string sample = I18N.get(StrId::STR_FONT_PREVIEW_TEXT);
     if (auto* fcm = renderer.getFontCacheManager()) {
-      fcm->prewarmCache(fontId, I18N.get(StrId::STR_FONT_PREVIEW_TEXT), SETTINGS.focusReadingEnabled ? 0x03 : 0x01);
+      const std::string warmText = sample + " ...";
+      fcm->prewarmCache(fontId, warmText.c_str(), SETTINGS.focusReadingEnabled ? 0x03 : 0x01);
     }
-    relayout(layout, renderer, fontId, textWidth);
+    relayout(layout, renderer, fontId, textWidth, sample.c_str());
+    // Preserve at least the end of paragraph one and the start of paragraph
+    // two. Shorten only the sample, at word boundaries (UTF-8 safe); keep
+    // actual reader metrics, indentation, alignment and spacing unchanged.
+    while (previewgeometry::boundaryHeight(static_cast<int>(layout.lines.size()), lineAdvance, lineH,
+                                            paragraphGap, labelH) > maxHeight) {
+      const auto space = sample.find_last_of(" ");
+      if (space == std::string::npos) break;
+      sample.resize(space);
+      const std::string shortened = sample + "...";
+      relayout(layout, renderer, fontId, textWidth, shortened.c_str());
+    }
     layout.key = key;
   }
+  return previewgeometry::chooseHeight(minHeight, maxHeight, static_cast<int>(layout.lines.size()),
+                                        lineAdvance, lineH, paragraphGap, labelH);
+}
 
-  // Draw the sample twice so the paragraph gap is visible
-  int y = top + previewPadding;
-  const int textBottomLimit = top + height - labelReserved;
+void renderPreview(const GfxRenderer& renderer, PreviewLayout& layout, int previewPadding, int labelGap, int top,
+                   int height, const char* familyName, const char* sizeName) {
+  (void)labelGap;  // Compact fixed gap; horizontal theme padding is preserved.
+  const int width = renderer.getScreenWidth() - 2 * previewPadding;
+  if (width <= 0 || height <= 0) return;
+  const int labelH = renderer.getLineHeight(UI_6_FONT_ID) + 2;
+  const int labelY = top + height - previewgeometry::BOTTOM_PADDING - labelH;
+  char labelBuf[128];
+  snprintf(labelBuf, sizeof(labelBuf), "%s \"%s, %s\"", tr(STR_PREVIEW), familyName, sizeName);
+  const std::string label = renderer.truncatedText(UI_6_FONT_ID, labelBuf, width);
+  if (labelY >= top) renderer.drawText(UI_6_FONT_ID, previewPadding, labelY, label.c_str());
+
+  const int fontId = SETTINGS.getReaderFontId();
+  if (fontId == 0 || layout.lines.empty()) return;
+  const int lineH = std::max(renderer.getTextHeight(fontId), renderer.getLineHeight(fontId)) + 2;
+  const int lineAdvance = std::max(1, renderer.getLineHeight(fontId, SETTINGS.getReaderLineCompression()));
+  const int paragraphGap = SETTINGS.extraParagraphSpacing ? lineAdvance / 2 : 0;
+  const int textBottomLimit = labelY - previewgeometry::LABEL_GAP;
+  int y = top + previewgeometry::TOP_PADDING;
   for (int paragraph = 0; paragraph < 2; paragraph++) {
     for (const auto& line : layout.lines) {
       if (y + lineH > textBottomLimit) return;
-      line->render(renderer, fontId, textLeft, y);
+      line->render(renderer, fontId, previewPadding + SETTINGS.screenMargin, y);
       y += lineAdvance;
     }
     y += paragraphGap;

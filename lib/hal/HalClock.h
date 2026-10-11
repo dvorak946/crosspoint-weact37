@@ -3,51 +3,49 @@
 #include <Arduino.h>
 #include <Rtc.h>
 
+#include <atomic>
+#include <ctime>
+
 class HalClock;
-extern HalClock halClock;  // Singleton
+extern HalClock halClock;  // Singleton.
 
 class HalClock {
-  bool _available = false;
-  mutable Rtc _sdkRtc;
-  // The RTC keeps UTC; local time comes from newlib's localtime_r under the
-  // POSIX TZ rule set via setTimezone(), so zones with DST are correct
-  // year-round. Cached as a UTC epoch to keep the RTC bus quiet.
-  mutable time_t _cachedUtc = 0;
-  mutable bool _hasCachedTime = false;
-  mutable unsigned long _lastPollMs = 0;
-
-  static constexpr unsigned long CLOCK_POLL_MS = 10000;  // 10 seconds
-
  public:
-  // Call after BoardConfig has selected the active device.
+  enum class SyncStatus { Idle, Pending, Success, Failed };
+
+  // Probe the optional RTC and restore valid time after a warm restart or sleep.
   void begin();
 
-  // True if an RTC is present on this device
-  bool isAvailable() const { return _available; }
+  // Clock settings are supported even before Wi-Fi supplies a valid time.
+  bool isAvailable() const { return true; }
+  // Hardware detection stays separate from the software clock capability.
+  bool hasRtc() const { return _rtcPresent; }
+  bool hasValidTime() const;
 
-  // Set the POSIX TZ rule (e.g. "CET-1CEST,M3.5.0,M10.5.0/3") applied to every
-  // read. nullptr/empty falls back to UTC. Drops the read cache so the change
-  // shows immediately.
+  // Apply the selected POSIX timezone without changing the stored UTC time.
   void setTimezone(const char* posixTz);
-
-  // Current wall-clock time in the configured timezone.
-  // Returns false if RTC is not available.
+  // Return false until RTC or a successful NTP response supplies valid time.
   bool localTime(struct tm& out) const;
-
-  // Get current local hour (0-23) and minute (0-59).
-  // Returns false if RTC is not available.
   bool getTime(uint8_t& hour, uint8_t& minute) const;
-
-  // Format the local time into a caller-provided buffer.
-  // 24h mode produces "HH:MM" (needs >=6 bytes); 12h mode produces "H:MM AM"/"HH:MM PM" (needs >=9 bytes).
-  // Returns false if RTC is not available.
+  // Buffer sizes: at least 6 bytes for 24-hour or 9 bytes for 12-hour format.
   bool formatTime(char* buf, size_t bufSize, bool use12Hour = false) const;
 
-  // Sync the RTC from an NTP server. Requires WiFi to be connected.
-  // Blocks for up to ~5s while waiting for SNTP response.
-  // Returns true if the RTC was successfully updated.
-  //
-  // Debouncing (skip if already synced once) is enforced by the caller, not here,
-  // so the HAL stays free of any app-layer settings dependency.
+  // Start or join a non-blocking sync. Poll from the main loop, not the renderer.
+  bool startNtpSync();
+  SyncStatus pollNtpSync();
+  SyncStatus ntpSyncStatus() const { return _syncStatus; }
+  // Cancel our wait without stopping the shared SNTP service used by TrustedTime.
+  void cancelNtpSync();
+
+  // Compatibility wrapper for older callers; current UI uses the async API.
   bool syncFromNTP();
+
+ private:
+  bool _rtcPresent = false;
+  Rtc _sdkRtc;
+  std::atomic<bool> _timeValid{false};
+  SyncStatus _syncStatus = SyncStatus::Idle;
+  unsigned long _syncStartedAt = 0;
+
+  static constexpr unsigned long NTP_TIMEOUT_MS = 5000;
 };

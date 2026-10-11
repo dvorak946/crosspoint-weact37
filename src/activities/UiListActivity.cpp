@@ -165,5 +165,6 @@ void UiListActivity::render(RenderLock&&) {
     renderUi();
   }
   drawFooter();
+    LOG_INF("REFRESH", "UiList FULL_REFRESH");
   renderer.displayBuffer();
 }

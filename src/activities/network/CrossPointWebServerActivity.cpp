@@ -8,7 +8,9 @@
 #include <I18n.h>
 #include <WiFi.h>
 
+#include <algorithm>
 #include <cstddef>
+#include <vector>
 
 #include "MappedInputManager.h"
 #include "NetworkModeSelectionActivity.h"
@@ -449,14 +451,11 @@ void CrossPointWebServerActivity::render(RenderLock&&) {
     const auto pageWidth = renderer.getScreenWidth();
     const auto pageHeight = renderer.getScreenHeight();
 
-    GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight},
-                   isApMode ? tr(STR_HOTSPOT_MODE) : tr(STR_FILE_TRANSFER), nullptr);
-
     if (state == WebServerActivityState::SERVER_RUNNING) {
-      GUI.drawSubHeader(renderer, Rect{0, metrics.topPadding + metrics.headerHeight, pageWidth, metrics.tabBarHeight},
-                        connectedSSID.c_str());
       renderServerRunning();
     } else {
+      GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight},
+                     isApMode ? tr(STR_HOTSPOT_MODE) : tr(STR_FILE_TRANSFER), nullptr);
       const auto height = renderer.getLineHeight(UI_10_FONT_ID);
       const auto top = (pageHeight - height) / 2;
       renderer.drawCenteredText(UI_10_FONT_ID, top, tr(STR_STARTING_HOTSPOT));
@@ -471,11 +470,113 @@ void CrossPointWebServerActivity::renderServerRunning() const {
 
   GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight},
                  isApMode ? tr(STR_HOTSPOT_MODE) : tr(STR_FILE_TRANSFER), nullptr);
+  // Leave room for the signal indicator, including when the SSID is long.
+  const int ssidWidth = std::max(0, pageWidth - 2 * metrics.contentSidePadding - (isApMode ? 0 : 34));
+  const auto ssidLabel = renderer.truncatedText(UI_10_FONT_ID, connectedSSID.c_str(), ssidWidth,
+                                              EpdFontFamily::REGULAR);
   GUI.drawSubHeader(renderer, Rect{0, metrics.topPadding + metrics.headerHeight, pageWidth, metrics.tabBarHeight},
-                    connectedSSID.c_str());
+                    ssidLabel.c_str());
 
   if (!isApMode) {
     renderWifiIndicator(metrics.topPadding + metrics.headerHeight);
+  }
+
+  // Keep the original layout on the larger stock panels. On small panels,
+  // reserve the actual header/footer heights and size QR boxes to the remainder.
+  const int pageHeight = renderer.getScreenHeight();
+  if (pageWidth < 400 || pageHeight < 600) {
+    const int gap = std::clamp(static_cast<int>(metrics.verticalSpacing), 4, 8);
+    const int sidePadding = std::clamp(static_cast<int>(metrics.contentSidePadding), 6, isApMode ? 16 : 8);
+    const int contentWidth = std::max(0, pageWidth - 2 * sidePadding);
+    const int contentTop = metrics.topPadding + metrics.headerHeight + metrics.tabBarHeight + gap;
+    const int contentBottom = pageHeight - metrics.buttonHintsHeight - std::max(12, gap);
+    const int contentHeight = std::max(0, contentBottom - contentTop);
+    const int smallHeight = std::max(1, renderer.getLineHeight(SMALL_FONT_ID));
+
+    // These URLs contain ASCII only. Split long URLs without ellipses so the
+    // entire address remains available for manual entry on a narrow screen.
+    const auto urlLines = [&](int fontId, const std::string& url) {
+      std::vector<std::string> lines;
+      std::string line;
+      for (const char character : url) {
+        const std::string candidate = line + character;
+        if (!line.empty() && renderer.getTextWidth(fontId, candidate.c_str()) > contentWidth) {
+          lines.push_back(line);
+          line.clear();
+        }
+        line += character;
+      }
+      if (!line.empty()) lines.push_back(line);
+      return lines;
+    };
+
+    const auto drawLines = [&](int fontId, const std::vector<std::string>& lines, int& y, int lineHeight) {
+      for (const auto& line : lines) {
+        if (y + lineHeight > contentBottom) break;
+        renderer.drawCenteredText(fontId, y, line.c_str(), true);
+        y += lineHeight;
+      }
+    };
+
+    const std::string ipUrl = "http://" + connectedIP + "/";
+    const std::string hostnameUrl = std::string("http://") + AP_HOSTNAME + ".local/";
+
+    if (!isApMode) {
+      // Prioritize the QR: no scan hint, and both addresses use the small font.
+      const auto ipLines = urlLines(SMALL_FONT_ID, ipUrl);
+      const auto hostLines = urlLines(SMALL_FONT_ID, hostnameUrl);
+      const int textHeight = static_cast<int>(ipLines.size() + hostLines.size()) * smallHeight;
+      const int qrSize = std::max(0, std::min(contentWidth, contentHeight - textHeight - 2 * gap));
+      int y = contentTop;
+      if (qrSize >= 41) {  // Include the four-module quiet zone on all sides.
+        QrUtils::drawQrCode(renderer, Rect{(pageWidth - qrSize) / 2, y, qrSize, qrSize}, ipUrl);
+        LOG_DBG("WEBACT", "Large URL QR: %d x %d at y=%d on %d x %d", qrSize, qrSize, y,
+                pageWidth, pageHeight);
+        y += qrSize + gap;
+      } else {
+        LOG_ERR("WEBACT", "Not enough room for QR; showing the URL instead");
+      }
+      drawLines(SMALL_FONT_ID, ipLines, y, smallHeight);
+      y += gap;
+      drawLines(SMALL_FONT_ID, hostLines, y, smallHeight);
+    } else {
+      // Two columns keep both hotspot QRs visible on a short, narrow panel.
+      // The connected SSID remains in the subheader above this content.
+      const auto hintLines = renderer.wrappedText(SMALL_FONT_ID, tr(STR_OPEN_URL_HINT), contentWidth, 2, EpdFontFamily::REGULAR);
+      const auto ipLines = urlLines(SMALL_FONT_ID, ipUrl);
+      const auto hostLines = urlLines(SMALL_FONT_ID, hostnameUrl);
+      const int columnWidth = std::max(0, (contentWidth - gap) / 2);
+      const int textHeight = smallHeight * (1 + static_cast<int>(hintLines.size()) +
+                                           static_cast<int>(ipLines.size()) + static_cast<int>(hostLines.size()));
+      const int qrSize = std::max(0, std::min({QR_CODE_WIDTH, columnWidth,
+                                             contentHeight - textHeight - 4 * gap}));
+      int y = contentTop;
+      if (qrSize >= 41) {
+        const int leftX = sidePadding + (columnWidth - qrSize) / 2;
+        const int rightX = sidePadding + columnWidth + gap + (columnWidth - qrSize) / 2;
+        const int wifiLabelWidth = renderer.getTextWidth(SMALL_FONT_ID, "Wi-Fi");
+        const int urlLabelWidth = renderer.getTextWidth(SMALL_FONT_ID, "URL");
+        renderer.drawText(SMALL_FONT_ID, leftX + (qrSize - wifiLabelWidth) / 2, y, "Wi-Fi");
+        renderer.drawText(SMALL_FONT_ID, rightX + (qrSize - urlLabelWidth) / 2, y, "URL");
+        y += smallHeight + gap;
+        const std::string wifiConfig = std::string("WIFI:T:nopass;S:") + connectedSSID + ";;";
+        QrUtils::drawQrCode(renderer, Rect{leftX, y, qrSize, qrSize}, wifiConfig);
+        QrUtils::drawQrCode(renderer, Rect{rightX, y, qrSize, qrSize}, hostnameUrl);
+        LOG_DBG("WEBACT", "Compact hotspot QRs: %d x %d on %d x %d", qrSize, qrSize, pageWidth, pageHeight);
+        y += qrSize + gap;
+        drawLines(SMALL_FONT_ID, hintLines, y, smallHeight);
+        y += gap;
+      } else {
+        LOG_ERR("WEBACT", "Not enough room for hotspot QRs; showing the URLs instead");
+      }
+      drawLines(SMALL_FONT_ID, hostLines, y, smallHeight);
+      y += gap;
+      drawLines(SMALL_FONT_ID, ipLines, y, smallHeight);
+    }
+
+    const auto labels = mappedInput.mapLabels(tr(STR_EXIT), "", "", "");
+    GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+    return;
   }
 
   int startY = metrics.topPadding + metrics.headerHeight + metrics.tabBarHeight + metrics.verticalSpacing * 2;

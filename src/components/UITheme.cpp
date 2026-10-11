@@ -78,6 +78,11 @@ const ThemeMetrics& UITheme::getMetrics() const {
   const bool touch = gpio.hasTouch();
   if (!metricsValid || touch != metricsForTouch) {
     adjustedMetrics = *currentMetrics;
+#if defined(FREEINK_WEACT37_DRIVER) && FREEINK_WEACT37_DRIVER
+    // Shared top status geometry on the 240x416 WeAct panel, for every theme.
+    adjustedMetrics.batteryBarHeight = 15;
+    adjustedMetrics.topPadding = 0;
+#endif
     if (touch) {
       adjustedMetrics.buttonHintsHeight = 0;
     }
@@ -160,7 +165,10 @@ int UITheme::getStatusBarHeight() {
 
   // Layout reservation is hardware-agnostic: pass clockAvailable=true so the
   // reserved height does not depend on whether an RTC is present.
-  return (sb.textLaneVisible(true) ? (metrics.statusBarVerticalMargin) : 0) +
+  // BaseTheme draws a full font line above the progress bar. Reserve the
+  // descender too, so changing the status font cannot make book text overlap it.
+  const int textLaneHeight = std::max(metrics.statusBarVerticalMargin, BaseTheme::getStatusBarTextLaneHeight());
+  return (sb.textLaneVisible(true) ? textLaneHeight : 0) +
          (sb.showsProgressBar() ? (sb.progressBarHeightPx + metrics.progressBarMarginTop) : 0);
 }
 

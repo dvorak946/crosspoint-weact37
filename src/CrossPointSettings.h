@@ -46,6 +46,13 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     PROGRESS_BAR_THICK = 2,
     STATUS_BAR_PROGRESS_BAR_THICKNESS_COUNT
   };
+  // Compact status-bar fonts; index 0 preserves the original Noto Sans 8.
+  enum STATUS_BAR_FONT_SIZE {
+    STATUS_BAR_FONT_DEFAULT = 0,
+    STATUS_BAR_FONT_7,
+    STATUS_BAR_FONT_6,
+    STATUS_BAR_FONT_SIZE_COUNT
+  };
   enum STATUS_BAR_TITLE { BOOK_TITLE = 0, CHAPTER_TITLE = 1, HIDE_TITLE = 2, STATUS_BAR_TITLE_COUNT };
   enum XTC_STATUS_BAR_MODE {
     XTC_STATUS_BAR_HIDE = 0,
@@ -238,6 +245,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t statusBarProgressBarThickness = PROGRESS_BAR_NORMAL;
   uint8_t statusBarTitle = CHAPTER_TITLE;
   uint8_t statusBarBattery = 1;
+  uint8_t statusBarFontSize = STATUS_BAR_FONT_DEFAULT;  // Independent of the reader font size.
   uint8_t xtcStatusBarMode = XTC_STATUS_BAR_HIDE;
   // Clock display in status bar (any board whose RTC probe succeeds)
   uint8_t statusBarClock = STATUS_BAR_CLOCK_HIDE;
@@ -395,6 +403,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     return (shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP) ? 10 : 400;
   }
   int getReaderFontId() const;
+  int getStatusBarFontId() const;  // Resolves the selected compact status-bar font.
 
   // Drop the SD font selection and fall back to the built-in family. The reader
   // point size comes back into BUILTIN_READER_POINT_SIZES with it, since that is
@@ -412,6 +421,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // refresh. Locking here would instead put a mutex on the render path and
   // stall it behind the SD write inside saveToFile(). Don't add one back.
   struct StatusBarSpec {
+    int fontId = 0;  // Resolved by statusBarSpec(); 0 is never published.
     bool showChapterPageCount = false;
     bool showBookProgressPercent = false;
     uint8_t titleMode = HIDE_TITLE;  // STATUS_BAR_TITLE

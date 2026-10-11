@@ -12,6 +12,7 @@
 #include <cstring>
 
 #include "BitmapHelpers.h"
+#include "CoverSizing.h"
 
 // ============================================================================
 // IMAGE PROCESSING OPTIONS - Toggle these to test different configurations
@@ -562,7 +563,7 @@ bool JpegToBmpConverter::jpegFileToBmpStreamInternal(HalFile& jpegFile, Print& b
   // Calculate output dimensions (pre-scale to fit display exactly)
   int outWidth = srcWidth;
   int outHeight = srcHeight;
-  if (targetWidth <= 0 || targetHeight <= 0) {
+  if (targetWidth <= 0 && targetHeight <= 0) {
     // Without an explicit target, keep decoder-native dimensions.
     outWidth = decodedSrcWidth;
     outHeight = decodedSrcHeight;
@@ -575,7 +576,9 @@ bool JpegToBmpConverter::jpegFileToBmpStreamInternal(HalFile& jpegFile, Print& b
   uint32_t scaleY_fp = 65536;
   bool needsScaling = false;
 
-  if (targetWidth > 0 && targetHeight > 0 && (srcWidth != targetWidth || srcHeight != targetHeight)) {
+  if (targetWidth > 0 && targetHeight == 0) {
+    if (!CoverSizing::byWidth(srcWidth, srcHeight, targetWidth, outWidth, outHeight)) return false;
+  } else if (targetWidth > 0 && targetHeight > 0 && (srcWidth != targetWidth || srcHeight != targetHeight)) {
     const float scaleToFitWidth = static_cast<float>(targetWidth) / srcWidth;
     const float scaleToFitHeight = static_cast<float>(targetHeight) / srcHeight;
     float scale = 1.0f;
@@ -731,4 +734,9 @@ bool JpegToBmpConverter::jpegFileToBmpStreamWithSize(HalFile& jpegFile, Print& b
 bool JpegToBmpConverter::jpegFileTo1BitBmpStreamWithSize(HalFile& jpegFile, Print& bmpOut, int targetMaxWidth,
                                                          int targetMaxHeight) {
   return jpegFileToBmpStreamInternal(jpegFile, bmpOut, targetMaxWidth, targetMaxHeight, true, true);
+}
+
+bool JpegToBmpConverter::jpegFileTo1BitBmpStreamWithWidth(HalFile& source, Print& output, int width) {
+  if (width <= 0) return false;
+  return jpegFileToBmpStreamInternal(source, output, width, 0, true, false);
 }

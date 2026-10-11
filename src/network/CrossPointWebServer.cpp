@@ -6,6 +6,7 @@
 #include <Crypto.h>
 #include <DeviceSecret.h>
 #include <FsHelpers.h>
+#include <InternalPaths.h>
 #include <HalGPIO.h>
 #include <HalMemory.h>
 #include <HalStorage.h>
@@ -572,6 +573,7 @@ void CrossPointWebServer::handleStatus() const {
 }
 
 void CrossPointWebServer::scanFiles(const char* path, const std::function<void(FileInfo)>& callback) const {
+  if (FsHelpers::isInternalCachePath(path)) return;
   HalFile root = Storage.open(path);
   if (!root) {
     LOG_DBG("WEB", "Failed to open directory: %s", path);
@@ -593,7 +595,8 @@ void CrossPointWebServer::scanFiles(const char* path, const std::function<void(F
     auto fileName = String(name);
 
     // Skip hidden items (starting with ".")
-    bool shouldHide = !SETTINGS.showHiddenFiles && fileName.startsWith(".");
+    bool shouldHide = FsHelpers::isInternalCacheEntry(path, name) ||
+                      (!SETTINGS.showHiddenFiles && fileName.startsWith("."));
 
     // Check against explicitly hidden items list
     if (!shouldHide) {

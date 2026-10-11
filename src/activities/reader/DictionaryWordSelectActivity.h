@@ -8,9 +8,10 @@
 
 #include "activities/Activity.h"
 #include "util/Dictionary.h"
+#include "util/DictionaryButtonNavigation.h"
 
-// Word selection over the current reader page: Left/Right step through words
-// in reading order, Up/Down jump rows, Confirm looks the word up and opens
+// Word selection over the current reader page: tap Nav1/Nav2 steps through
+// words in reading order; hold moves down/up rows. Confirm looks the word up and opens
 // DictionaryDefinitionActivity, Back returns to the reader. On touch devices a
 // touch-down moves the highlight and a tap on a word looks it up directly.
 class DictionaryWordSelectActivity final : public Activity {
@@ -44,6 +45,8 @@ class DictionaryWordSelectActivity final : public Activity {
   int closestInRow(uint16_t row, int centerX) const;
   int wordAt(int x, int y) const;
   void moveVertical(int direction);
+  void resetNavigation();
+  void navigateWords();
   void performLookup();
   bool drawHighlightWithSnapshot();
   void drawHints() const;
@@ -57,7 +60,8 @@ class DictionaryWordSelectActivity final : public Activity {
   std::vector<WordBox> words;
   int selected = 0;
   uint16_t rowCount = 0;
-  unsigned long lastHorizontalMoveTime = 0;
+  DictionaryButtonNavigation nextNavigation;
+  DictionaryButtonNavigation previousNavigation;
 
   Dictionary dict;
   bool dictOpenAttempted = false;

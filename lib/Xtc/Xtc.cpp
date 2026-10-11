@@ -8,6 +8,8 @@
 #include "Xtc.h"
 
 #include <Bitmap.h>
+#include <CoverCache.h>
+#include <CoverSizing.h>
 #include <HalStorage.h>
 #include <Logging.h>
 #include <freertos/FreeRTOS.h>
@@ -279,9 +281,12 @@ bool Xtc::generateCoverBmp() const {
 std::string Xtc::getThumbBmpPath() const { return cachePath + "/thumb_[HEIGHT].bmp"; }
 std::string Xtc::getThumbBmpPath(int height) const { return cachePath + "/thumb_" + std::to_string(height) + ".bmp"; }
 
-bool Xtc::generateThumbBmp(int height) const {
-  // Already generated
-  if (Storage.exists(getThumbBmpPath(height).c_str())) {
+bool Xtc::generateThumbBmp(int height, int width) const {
+  const std::string destination = width > 0 ? getHomeCoverBmpPath() : getThumbBmpPath(height);
+  const std::string outputPath = width > 0 ? destination + ".tmp" : destination;
+  const ScopedCleanup cleanup{[&]() { if (width > 0) Storage.remove(outputPath.c_str()); }};
+  // Already generated and complete at the requested width.
+  if (width > 0 ? CoverCache::valid(destination, width) : Storage.exists(destination.c_str())) {
     return true;
   }
 
@@ -305,6 +310,7 @@ bool Xtc::generateThumbBmp(int height) const {
     return false;
   }
 
+  if (pageInfo.width == 0 || pageInfo.height == 0) return false;
   // Get bit depth
   const uint8_t bitDepth = parser->getBitDepth();
 
@@ -315,10 +321,10 @@ bool Xtc::generateThumbBmp(int height) const {
   // Calculate scale factor
   float scaleX = static_cast<float>(THUMB_TARGET_WIDTH) / pageInfo.width;
   float scaleY = static_cast<float>(THUMB_TARGET_HEIGHT) / pageInfo.height;
-  float scale = (scaleX > scaleY) ? scaleX : scaleY;  // for cropping
+  float scale = width > 0 ? static_cast<float>(width) / pageInfo.width : (scaleX > scaleY ? scaleX : scaleY);
 
   // Only scale down, never up
-  if (scale >= 1.0f) {
+  if (width <= 0 && scale >= 1.0f) {
     // Page is already small enough, just use cover.bmp
     // Copy cover.bmp to thumb.bmp
     if (generateCoverBmp()) {
@@ -338,8 +344,12 @@ bool Xtc::generateThumbBmp(int height) const {
     return false;
   }
 
-  uint16_t thumbWidth = static_cast<uint16_t>(pageInfo.width * scale);
-  uint16_t thumbHeight = static_cast<uint16_t>(pageInfo.height * scale);
+  int scaledWidth = static_cast<int>(pageInfo.width * scale);
+  int scaledHeight = static_cast<int>(pageInfo.height * scale);
+  if (width > 0 && !CoverSizing::byWidth(pageInfo.width, pageInfo.height, width, scaledWidth, scaledHeight)) return false;
+  if (scaledWidth <= 0 || scaledHeight <= 0) return false;
+  const uint16_t thumbWidth = static_cast<uint16_t>(scaledWidth);
+  const uint16_t thumbHeight = static_cast<uint16_t>(scaledHeight);
 
   LOG_DBG("XTC", "Generating thumb BMP: %dx%d -> %dx%d (scale: %.3f)", pageInfo.width, pageInfo.height, thumbWidth,
           thumbHeight, scale);
@@ -369,7 +379,7 @@ bool Xtc::generateThumbBmp(int height) const {
 
   // Create thumbnail BMP file - use 1-bit format for fast home screen rendering (no gray passes)
   HalFile thumbBmp;
-  if (!Storage.openFileForWrite("XTC", getThumbBmpPath(height), thumbBmp)) {
+  if (!Storage.openFileForWrite("XTC", outputPath, thumbBmp)) {
     LOG_DBG("XTC", "Failed to create thumb BMP file");
     return false;
   }
@@ -377,7 +387,7 @@ bool Xtc::generateThumbBmp(int height) const {
   // Write 1-bit BMP header (top-down row order)
   BmpHeader bmpHeader;
   createBmpHeader(&bmpHeader, thumbWidth, thumbHeight, BmpRowOrder::TopDown);
-  thumbBmp.write(reinterpret_cast<const uint8_t*>(&bmpHeader), sizeof(bmpHeader));
+  if (thumbBmp.write(reinterpret_cast<const uint8_t*>(&bmpHeader), sizeof(bmpHeader)) != sizeof(bmpHeader)) return false;
 
   // Fixed-point scale factor (16.16)
   uint32_t scaleInv_fp = static_cast<uint32_t>(65536.0f / scale);
@@ -480,11 +490,12 @@ bool Xtc::generateThumbBmp(int height) const {
     }
 
     // Write row (already padded to 4-byte boundary by rowSize)
-    thumbBmp.write(rowBuffer, rowSize);
+    if (thumbBmp.write(rowBuffer, rowSize) != rowSize) return false;
     yieldDuringThumbnail(rowsSinceYield);
   }
   LOG_DBG("XTC", "Generated thumb BMP (%dx%d): %s", thumbWidth, thumbHeight, getThumbBmpPath(height).c_str());
-  return true;
+  thumbBmp.close();
+  return width > 0 ? CoverCache::commit(outputPath, destination, width) : true;
 }
 
 uint32_t Xtc::getPageCount() const {
